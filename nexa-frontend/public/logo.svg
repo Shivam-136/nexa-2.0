@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" fill="none">
+  <defs>
+    <linearGradient id="nexa-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+  </defs>
+  <!-- Icon Mark -->
+  <rect x="4" y="8" width="48" height="48" rx="12" fill="#0b1120" stroke="url(#nexa-logo-grad)" stroke-width="1.5" />
+  <path d="M18 42V22L30 36V22M30 42V28L42 42V22" stroke="url(#nexa-logo-grad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Text Brand -->
+  <text x="64" y="38" fill="#f8fafc" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="800" letter-spacing="2">NEXA</text>
+  <rect x="146" y="22" width="42" height="20" rx="4" fill="url(#nexa-logo-grad)" />
+  <text x="153" y="36" fill="#ffffff" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" letter-spacing="1">2.0</text>
+</svg>
+
