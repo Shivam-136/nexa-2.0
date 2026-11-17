@@ -13,13 +13,25 @@ import {
   Play,
   Square,
   Globe,
+  Trash2,
+  RefreshCw,
+  ShieldCheck,
+  Server,
+  Sparkles,
+  Database,
+  Brain,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { APP_CONFIG, API_ENDPOINTS, VOICE_LANGUAGES } from '../utils/constants';
+import MemoryManagement from '../components/settings/MemoryManagement';
 
 export default function SettingsPage() {
   const {
     addToast,
+    connectionStatus,
+    refreshBackendStatus,
+    clearConversation,
+    messages,
     isVoiceSupported,
     micPermission,
     requestMicrophoneAccess,
@@ -42,15 +54,13 @@ export default function SettingsPage() {
 
   const [settings, setSettings] = useState({
     operatorName: 'Operator',
-    audioChimes: true,
-    llmProvider: 'local-ollama',
-    ollamaEndpoint: 'http://localhost:11434',
-    geminiGateway: 'http://localhost:8000/api/v1/reasoning',
+    apiBaseUrl: API_ENDPOINTS.BASE_URL,
     desktopDaemonUrl: API_ENDPOINTS.DESKTOP_BRIDGE_URL,
     autoReconnect: true,
   });
 
   const [isTestingMic, setIsTestingMic] = useState(false);
+  const [isPingingBackend, setIsPingingBackend] = useState(false);
 
   const handleTestMic = async () => {
     setIsTestingMic(true);
@@ -60,6 +70,25 @@ export default function SettingsPage() {
       addToast('Microphone Verified', 'Browser microphone access granted and functional.', 'success');
     } else {
       addToast('Microphone Check Failed', res.error || 'Access denied by browser.', 'error');
+    }
+  };
+
+  const handlePingBackend = async () => {
+    setIsPingingBackend(true);
+    const health = await refreshBackendStatus();
+    setIsPingingBackend(false);
+    if (health.isOnline) {
+      addToast(
+        'Backend Online',
+        `NEXA Brain connected. Model: ${health.model}. Key configured: ${health.geminiConfigured ? 'Yes' : 'No'}.`,
+        'success'
+      );
+    } else {
+      addToast(
+        'Backend Offline',
+        health.error || 'Could not connect to http://localhost:5000.',
+        'error'
+      );
     }
   };
 
@@ -76,6 +105,9 @@ export default function SettingsPage() {
     addToast('Defaults Restored', 'Configuration settings returned to default baseline.', 'info');
   };
 
+  const isBackendOnline = connectionStatus.backend === 'Connected';
+  const isAiActive = connectionStatus.aiBrain?.includes('Active');
+
   return (
     <div className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
@@ -88,7 +120,7 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-xl font-bold text-white">System Configuration</h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Manage AI reasoning endpoints, desktop bridge sockets, voice parameters, and Web Speech settings.
+                Manage AI brain connectivity, backend endpoints, voice synthesis toggles, and session history.
               </p>
             </div>
           </div>
@@ -115,86 +147,129 @@ export default function SettingsPage() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Section 1: AI Reasoning Model Gateway */}
-        <div className="p-6 rounded-3xl glass-card space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-800/80 pb-3">
-            <Cpu className="h-4 w-4 text-cyan-400" />
-            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
-              AI Reasoning Engine Configuration
-            </h3>
+        {/* Section 1: AI Reasoning & Backend Status (Phase 4 Gemini Integration) */}
+        <div className="p-6 rounded-3xl glass-card space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+            <div className="flex items-center space-x-2">
+              <Cpu className="h-4 w-4 text-cyan-400" />
+              <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
+                AI Brain &amp; Backend Telemetry
+              </h3>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono border flex items-center space-x-1 ${
+                  isBackendOnline
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                }`}
+              >
+                <Server className="h-3 w-3" />
+                <span>BACKEND: {connectionStatus.backend.toUpperCase()}</span>
+              </span>
+
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono border flex items-center space-x-1 ${
+                  connectionStatus.database === 'Connected'
+                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                }`}
+              >
+                <Database className="h-3 w-3" />
+                <span>DB: {connectionStatus.database?.toUpperCase() || 'OFFLINE'}</span>
+              </span>
+
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono border flex items-center space-x-1 ${
+                  isAiActive
+                    ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                }`}
+              >
+                <Sparkles className="h-3 w-3" />
+                <span>AI BRAIN: {connectionStatus.aiBrain}</span>
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+            {/* Backend Service Status Card */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200">Backend Connection</span>
+                <span
+                  className={`px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold ${
+                    isBackendOnline
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                  }`}
+                >
+                  {connectionStatus.backend}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Connects to the Express service hosted on port 5000. Handles validation, rate-limiting, and official Gemini Gen AI communication.
+              </p>
+              <div className="flex items-center space-x-2 pt-1">
+                <input
+                  type="text"
+                  value={settings.apiBaseUrl}
+                  onChange={(e) => setSettings({ ...settings, apiBaseUrl: e.target.value })}
+                  className="flex-1 px-3 py-1.5 rounded-xl glass-input text-slate-200 font-mono text-[11px] focus:outline-none focus:border-cyan-500/60"
+                  placeholder="http://localhost:5000/api"
+                />
+                <button
+                  type="button"
+                  onClick={handlePingBackend}
+                  disabled={isPingingBackend}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition-colors flex items-center space-x-1.5 flex-shrink-0"
+                  title="Ping backend health endpoint"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 text-cyan-400 ${isPingingBackend ? 'animate-spin' : ''}`} />
+                  <span>Check</span>
+                </button>
+              </div>
+            </div>
+
+            {/* AI Brain Status Card */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200">Google Gemini Brain</span>
+                <span className="font-mono text-cyan-400 text-[11px]">{connectionStatus.aiBrain}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                NEXA's conversational intelligence utilizes Google's official Gen AI SDK with multilingual reasoning in English, Hindi, and Hinglish.
+              </p>
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center space-x-2 text-[11px] text-slate-400">
+                <ShieldCheck className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+                <span>
+                  API key is secured exclusively inside <code className="text-cyan-300">nexa-backend/.env</code> and is never exposed to the browser.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Conversation Management Strip */}
+          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div>
-              <label className="block text-slate-300 font-medium mb-1.5">
-                Inference Provider Mode
-              </label>
-              <select
-                value={settings.llmProvider}
-                onChange={(e) => setSettings({ ...settings, llmProvider: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl glass-input text-slate-200 focus:outline-none focus:border-blue-500/60"
-              >
-                <option value="local-ollama" className="bg-slate-900">Local LLM (Ollama Engine)</option>
-                <option value="gemini-gateway" className="bg-slate-900">Cloud AI Gateway (Gemini API)</option>
-                <option value="hybrid" className="bg-slate-900">Hybrid Adaptive Engine</option>
-              </select>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Zero secret keys are stored in frontend. All model calls route via backend proxy.
+              <span className="font-semibold text-slate-200">Active Conversation Memory</span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Current thread contains <span className="text-cyan-400 font-mono">{messages.length}</span> message(s). Context is maintained during the active browser session.
               </p>
             </div>
-
-            <div>
-              <label className="block text-slate-300 font-medium mb-1.5">
-                Local Ollama Host Endpoint
-              </label>
-              <input
-                type="text"
-                value={settings.ollamaEndpoint}
-                onChange={(e) => setSettings({ ...settings, ollamaEndpoint: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl glass-input text-slate-200 font-mono text-[11px] focus:outline-none focus:border-blue-500/60"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">Default local port for Ollama daemon.</p>
-            </div>
+            <button
+              type="button"
+              onClick={clearConversation}
+              className="px-3.5 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 text-xs font-medium transition-colors flex items-center space-x-1.5 self-start sm:self-auto"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>Clear Session Dialogue</span>
+            </button>
           </div>
         </div>
 
-        {/* Section 2: Desktop Operator Daemon Bridge */}
-        <div className="p-6 rounded-3xl glass-card space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-800/80 pb-3">
-            <Monitor className="h-4 w-4 text-blue-400" />
-            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
-              Desktop Automation Bridge (Phase 3)
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block text-slate-300 font-medium mb-1.5">
-                WebSocket Bridge URI
-              </label>
-              <input
-                type="text"
-                value={settings.desktopDaemonUrl}
-                onChange={(e) => setSettings({ ...settings, desktopDaemonUrl: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl glass-input text-slate-200 font-mono text-[11px] focus:outline-none focus:border-blue-500/60"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">Local workstation IPC daemon address.</p>
-            </div>
-
-            <div className="flex items-center space-x-3 pt-6">
-              <input
-                type="checkbox"
-                id="autoReconnect"
-                checked={settings.autoReconnect}
-                onChange={(e) => setSettings({ ...settings, autoReconnect: e.target.checked })}
-                className="rounded border-slate-700 text-blue-600 focus:ring-0 bg-slate-900 h-4 w-4"
-              />
-              <label htmlFor="autoReconnect" className="text-slate-300 text-xs">
-                Auto-reconnect to Desktop Daemon when available
-              </label>
-            </div>
-          </div>
-        </div>
+        {/* Section 2: Persistent User Memory System (Phase 5 MongoDB Integration) */}
+        <MemoryManagement addToast={addToast} />
 
         {/* Section 3: Browser Voice Engine (Web Speech STT & TTS) */}
         <div className="p-6 rounded-3xl glass-card space-y-5">
@@ -202,7 +277,7 @@ export default function SettingsPage() {
             <div className="flex items-center space-x-2">
               <Mic className="h-4 w-4 text-cyan-400" />
               <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
-                Web Speech Voice Interaction &amp; Audio Synthesis
+                Voice Response &amp; Speech Synthesis Settings
               </h3>
             </div>
             <div className="flex items-center space-x-2">
@@ -217,12 +292,12 @@ export default function SettingsPage() {
               </span>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
-                  isSynthesisSupported
+                  ttsEnabled && isSynthesisSupported
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
                 }`}
               >
-                TTS: {isSynthesisSupported ? 'ACTIVE' : 'OFF'}
+                TTS: {ttsEnabled && isSynthesisSupported ? 'ACTIVE' : 'MUTED'}
               </span>
             </div>
           </div>
@@ -306,8 +381,8 @@ export default function SettingsPage() {
                     : 'bg-slate-800 text-slate-400 border border-slate-700'
                 }`}
               >
-                {ttsEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-                <span>{ttsEnabled ? 'Speech Output Enabled' : 'Speech Output Muted'}</span>
+                {ttsEnabled ? <Volume2 className="h-3.5 w-3.5 text-emerald-400" /> : <VolumeX className="h-3.5 w-3.5 text-slate-500" />}
+                <span>{ttsEnabled ? 'Voice Responses Enabled' : 'Voice Responses Muted'}</span>
               </button>
             </div>
 
@@ -400,6 +475,44 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Section 3: Desktop Operator Daemon Bridge */}
+        <div className="p-6 rounded-3xl glass-card space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-800/80 pb-3">
+            <Monitor className="h-4 w-4 text-blue-400" />
+            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
+              Desktop Automation Bridge
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="block text-slate-300 font-medium mb-1.5">
+                WebSocket Bridge URI
+              </label>
+              <input
+                type="text"
+                value={settings.desktopDaemonUrl}
+                onChange={(e) => setSettings({ ...settings, desktopDaemonUrl: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl glass-input text-slate-200 font-mono text-[11px] focus:outline-none focus:border-blue-500/60"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">Local workstation IPC daemon address.</p>
+            </div>
+
+            <div className="flex items-center space-x-3 pt-6">
+              <input
+                type="checkbox"
+                id="autoReconnect"
+                checked={settings.autoReconnect}
+                onChange={(e) => setSettings({ ...settings, autoReconnect: e.target.checked })}
+                className="rounded border-slate-700 text-blue-600 focus:ring-0 bg-slate-900 h-4 w-4"
+              />
+              <label htmlFor="autoReconnect" className="text-slate-300 text-xs">
+                Auto-reconnect to Desktop Daemon when available
+              </label>
+            </div>
+          </div>
+        </div>
+
         {/* Section 4: About NEXA 2.0 */}
         <div className="p-6 rounded-3xl glass-card flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-4">
           <div>
@@ -410,12 +523,12 @@ export default function SettingsPage() {
               </span>
             </h4>
             <p className="text-slate-400 mt-1">
-              AI-Powered Personal Computer Operator &bull; Modern Decoupled Architecture
+              AI-Powered Personal Computer Operator &bull; Google Gemini Brain Integrated
             </p>
           </div>
 
           <div className="text-slate-500 font-mono text-[11px]">
-            Frontend: React 18 + Vite 5 + Web Speech API &bull; Phase 3 Voice Active
+            Node Express + Google Gen AI SDK &bull; Phase 4 AI Brain Active
           </div>
         </div>
       </form>

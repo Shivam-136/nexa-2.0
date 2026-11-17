@@ -5,8 +5,8 @@
 export const APP_CONFIG = {
   NAME: 'NEXA 2.0',
   TAGLINE: 'AI Personal Computer Operator',
-  VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
-  ENV: import.meta.env.VITE_APP_ENV || 'development',
+  VERSION: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_VERSION) || '2.0.0',
+  ENV: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_ENV) || 'development',
 };
 
 export const ROUTES = {
@@ -20,10 +20,22 @@ export const ROUTES = {
 };
 
 export const API_ENDPOINTS = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-  WS_URL: import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws',
-  DESKTOP_BRIDGE_URL: import.meta.env.VITE_DESKTOP_BRIDGE_URL || 'ws://localhost:9001/desktop',
+  BASE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'http://localhost:5000/api',
+  WS_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_BASE_URL) || 'ws://localhost:5000/ws',
+  DESKTOP_BRIDGE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_DESKTOP_BRIDGE_URL) || 'ws://localhost:9001/desktop',
+  MEMORIES: '/memories',
+  CONVERSATIONS: '/conversations',
 };
+
+export const MEMORY_CATEGORIES = [
+  'All',
+  'preference',
+  'project',
+  'personal',
+  'instruction',
+  'fact',
+  'other',
+];
 
 export const ASSISTANT_STATES = {
   IDLE: 'idle',

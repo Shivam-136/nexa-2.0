@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, ShieldAlert, Bell, User } from 'lucide-react';
+import { Menu, ShieldAlert, Bell, User, Sparkles } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { ROUTES } from '../../utils/constants';
 
@@ -81,6 +81,19 @@ export default function TopHeader() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
           </span>
           <span className="font-mono text-[11px]">CORE: {connectionStatus.core.toUpperCase()}</span>
+        </div>
+
+        {/* AI Brain Status */}
+        <div
+          title={`NEXA AI Brain: ${connectionStatus.aiBrain}`}
+          className={`hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono border ${
+            connectionStatus.aiBrain?.includes('Active')
+              ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
+              : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
+          }`}
+        >
+          <Sparkles className="h-3 w-3 text-cyan-400" />
+          <span className="text-[11px]">{connectionStatus.aiBrain}</span>
         </div>
 
         {/* Desktop Agent Status: Not Connected */}

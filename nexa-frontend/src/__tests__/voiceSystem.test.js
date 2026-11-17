@@ -12,6 +12,9 @@ import {
   filterVoicesByLanguage,
   speakUtterance,
   cancelUtterance,
+  detectTextLanguage,
+  cleanTextForSpeech,
+  selectBestVoice,
 } from '../services/voice.service.js';
 
 describe('NEXA 2.0 Browser Voice System Test Suite', () => {
@@ -164,9 +167,7 @@ describe('NEXA 2.0 Browser Voice System Test Suite', () => {
       // Step 1: partial interim speech chunk
       const interimEvent = {
         resultIndex: 0,
-        results: [
-          [{ transcript: 'open visual' }],
-        ],
+        results: [[{ transcript: 'open visual' }]],
       };
       interimEvent.results[0].isFinal = false;
       handleSpeechEvent(interimEvent);
@@ -177,9 +178,7 @@ describe('NEXA 2.0 Browser Voice System Test Suite', () => {
       interimResult = '';
       const finalEvent = {
         resultIndex: 0,
-        results: [
-          [{ transcript: 'open visual studio code' }],
-        ],
+        results: [[{ transcript: 'open visual studio code' }]],
       };
       finalEvent.results[0].isFinal = true;
       handleSpeechEvent(finalEvent);
@@ -188,7 +187,7 @@ describe('NEXA 2.0 Browser Voice System Test Suite', () => {
     });
   });
 
-  // TEST 5: Speech Synthesis
+  // TEST 5: Speech Synthesis & Intelligent Voice Selection
   describe('5. Test Speech Synthesis (TTS)', () => {
     it('should detect support and filter available voices by language', async () => {
       const mockVoices = [
@@ -277,9 +276,9 @@ describe('NEXA 2.0 Browser Voice System Test Suite', () => {
     });
   });
 
-  // TEST 6: Stop Listening
-  describe('6. Test Stop Listening', () => {
-    it('should allow stopping speech recognition and cancelling speech synthesis', () => {
+  // TEST 6: Stop Speech Immediately
+  describe('6. Test Stop Speech Immediately', () => {
+    it('should allow stopping speech recognition and cancelling speech synthesis immediately', () => {
       let stopped = false;
       let cancelled = false;
 
@@ -345,6 +344,145 @@ describe('NEXA 2.0 Browser Voice System Test Suite', () => {
       assert.equal(isRecognitionSupported(), false);
       assert.equal(isSynthesisSupported(), false);
       assert.equal(getSpeechRecognition(), null);
+    });
+  });
+
+  // SPECIFIC PHASE REQUIREMENTS TEST SUITE
+  describe('9. Voice Response Engine & Intelligent Voice Selection', () => {
+    const mockVoiceList = [
+      { voiceURI: 'google-en-us', name: 'Google US English', lang: 'en-US', default: true },
+      { voiceURI: 'google-en-in', name: 'Google Indian English', lang: 'en-IN', default: false },
+      { voiceURI: 'google-hi-in', name: 'Google हिन्दी', lang: 'hi-IN', default: false },
+      { voiceURI: 'microsoft-en-gb', name: 'Microsoft George', lang: 'en-GB', default: false },
+    ];
+
+    it('should detect Hindi Devanagari and prefer hi-IN voice', () => {
+      const text = 'नमस्ते शिवम, मैं नेक्सा 2.0 हूँ।';
+      const detected = detectTextLanguage(text);
+      assert.equal(detected, 'hindi-devanagari');
+
+      const selection = selectBestVoice({
+        voices: mockVoiceList,
+        text,
+      });
+      assert.equal(selection.voice.lang, 'hi-IN');
+      assert.equal(selection.voice.voiceURI, 'google-hi-in');
+      assert.equal(selection.lang, 'hi-IN');
+    });
+
+    it('should detect Roman Hinglish and prefer en-IN voice when available', () => {
+      const text = 'Main theek hoon Shivam! Aap batao NEXA 2.0 me kya chal raha hai?';
+      const detected = detectTextLanguage(text);
+      assert.equal(detected, 'roman-hinglish');
+
+      const selection = selectBestVoice({
+        voices: mockVoiceList,
+        text,
+      });
+      assert.equal(selection.voice.lang, 'en-IN');
+      assert.equal(selection.voice.voiceURI, 'google-en-in');
+      assert.equal(selection.lang, 'en-IN');
+    });
+
+    it('should detect English and prefer en-IN or en-US voice', () => {
+      const text = 'Hello Shivam, NEXA 2.0 is online and ready for your commands.';
+      const detected = detectTextLanguage(text);
+      assert.equal(detected, 'english');
+
+      const selection = selectBestVoice({
+        voices: mockVoiceList,
+        text,
+      });
+      assert.ok(selection.voice.lang === 'en-IN' || selection.voice.lang === 'en-US');
+    });
+
+    it('should fall back gracefully when Hindi voice is missing', () => {
+      const voicesWithoutHindi = [
+        { voiceURI: 'en-1', name: 'David', lang: 'en-US', default: true },
+        { voiceURI: 'en-2', name: 'Ravi', lang: 'en-IN', default: false },
+      ];
+
+      const hindiText = 'नमस्ते Shivam';
+      const selection = selectBestVoice({
+        voices: voicesWithoutHindi,
+        text: hindiText,
+      });
+
+      // Should not throw and should gracefully fall back to en-IN or default
+      assert.ok(selection.voice);
+      assert.equal(selection.lang, 'hi-IN'); // Target lang is preserved
+      assert.equal(selection.voice.lang, 'en-IN');
+    });
+
+    it('should clean markdown and symbols from text before speaking for natural pronunciation', () => {
+      const rawText =
+        '**NEXA 2.0** is an *AI-powered* operator.\n- Feature 1: `React`\n- Feature 2: [Google Gemini](https://ai.google.dev)\n```json\n{"status":"ready"}\n```';
+
+      const cleaned = cleanTextForSpeech(rawText);
+
+      assert.equal(cleaned.includes('**'), false);
+      assert.equal(cleaned.includes('```'), false);
+      assert.equal(cleaned.includes('https://'), false);
+      assert.ok(cleaned.includes('NEXA 2.0 is an AI-powered operator.'));
+      assert.ok(cleaned.includes('Feature 1: React'));
+      assert.ok(cleaned.includes('Feature 2: Google Gemini'));
+    });
+
+    it('should prevent duplicate speech by cancelling previous utterance on new speak request', (t, done) => {
+      let cancelCount = 0;
+      let spokenTexts = [];
+
+      class MockUtterance {
+        constructor(text) {
+          this.text = text;
+        }
+      }
+
+      setMockWindow({
+        speechSynthesis: {
+          cancel: () => {
+            cancelCount++;
+          },
+          speak: (utt) => {
+            spokenTexts.push(utt.text);
+          },
+          speaking: false,
+          paused: false,
+        },
+        SpeechSynthesisUtterance: MockUtterance,
+      });
+
+      // Speak call 1
+      speakUtterance('First message', { lang: 'en-US' });
+      assert.equal(cancelCount, 1);
+      assert.equal(spokenTexts.length, 1);
+      assert.equal(spokenTexts[0], 'First message');
+
+      // Speak call 2 immediately follows -> must cancel previous
+      speakUtterance('Second message', { lang: 'en-US' });
+      assert.equal(cancelCount, 2);
+      assert.equal(spokenTexts.length, 2);
+      assert.equal(spokenTexts[1], 'Second message');
+
+      done();
+    });
+
+    it('should not throw when SpeechSynthesis is unsupported or text is empty', () => {
+      setMockWindow({}); // Unsupported
+      let errorReported = false;
+
+      const cancel = speakUtterance('Hello', {
+        onError: () => {
+          errorReported = true;
+        },
+      });
+
+      assert.equal(typeof cancel, 'function');
+      assert.equal(errorReported, true);
+
+      // Empty text should return cancel without throwing
+      const cancelEmpty = speakUtterance('', {});
+      assert.equal(typeof cancelEmpty, 'function');
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Cpu,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import StatusBadge from '../common/StatusBadge';
@@ -18,16 +19,20 @@ export default function ActivityPanel() {
     connectionStatus,
     activeTasks,
     recentActivity,
+    refreshBackendStatus,
     addToast,
   } = useAppContext();
 
-  const handleRetryBridge = () => {
+  const handleRetryBridge = async () => {
+    const health = await refreshBackendStatus();
     addToast(
-      'Connecting to Desktop Bridge...',
-      'Attempted socket handshake with ws://localhost:9001/desktop. Bridge daemon not found (Phase 3).',
-      'warning'
+      'Telemetry Refreshed',
+      `Backend: ${health.isOnline ? 'Online' : 'Offline'} • Brain: ${health.model}`,
+      health.isOnline ? 'info' : 'warning'
     );
   };
+
+  const isBrainActive = connectionStatus.aiBrain?.includes('Active');
 
   return (
     <div className="w-full flex flex-col space-y-4">
@@ -47,6 +52,24 @@ export default function ActivityPanel() {
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
+        </div>
+
+        {/* Gemini AI Brain Status */}
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-200">Gemini AI Brain</p>
+              <p className="text-[10px] text-slate-500 font-mono">{connectionStatus.aiBrain}</p>
+            </div>
+          </div>
+          <StatusBadge
+            status={isBrainActive ? 'ready' : connectionStatus.backend === 'Connected' ? 'warning' : 'not-connected'}
+            label={isBrainActive ? 'Active' : connectionStatus.backend === 'Connected' ? 'No Key' : 'Offline'}
+            size="xs"
+          />
         </div>
 
         {/* Desktop Daemon Status */}

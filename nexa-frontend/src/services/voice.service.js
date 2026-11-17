@@ -144,7 +144,183 @@ export const filterVoicesByLanguage = (voices = [], langCode = 'en') => {
 };
 
 /**
+ * Detects whether the text is Devanagari Hindi, Roman-script Hinglish, or English.
+ *
+ * @param {string} text
+ * @param {string} [preferredLang='en-US']
+ * @returns {'hindi-devanagari' | 'roman-hinglish' | 'english'}
+ */
+export const detectTextLanguage = (text = '', preferredLang = 'en-US') => {
+  if (!text || typeof text !== 'string') return 'english';
+
+  // 1. Check for Devanagari Unicode characters (U+0900 to U+097F)
+  const hasDevanagari = /[\u0900-\u097F]/.test(text);
+  if (hasDevanagari) {
+    return 'hindi-devanagari';
+  }
+
+  // 2. Check for Roman-script Hinglish
+  // Look for common conversational Hinglish grammatical marker words
+  const hinglishMarkers = /\b(main|mera|meri|mere|aap|aapke|aapko|tum|tumhara|kaise|kaisi|kaisa|kya|kyun|kyu|hai|hain|hoon|ho|aur|yeh|ye|woh|wo|toh|to|nahi|nahin|theek|thik|bhi|karo|karna|rahe|raha|rahi|batayein|batao|accha|acha|kripya|namaste|dhanyawad|kaun|kab|kahan|kuch|apna|apne)\b/i;
+
+  const isHiPreferred = preferredLang && preferredLang.toLowerCase().startsWith('hi');
+  if (hinglishMarkers.test(text) || (isHiPreferred && !/^[\x00-\x7F\s.,!?'"()-]+$/.test(text))) {
+    return 'roman-hinglish';
+  }
+
+  return 'english';
+};
+
+/**
+ * Cleans text for natural speech synthesis pronunciation by removing markdown formatting,
+ * code blocks, URLs, and awkward symbols while preserving natural conversational punctuation.
+ *
+ * @param {string} text
+ * @returns {string} Cleaned spoken text
+ */
+export const cleanTextForSpeech = (text = '') => {
+  if (!text || typeof text !== 'string') return '';
+
+  return text
+    // Remove multi-line code blocks ``` ... ```
+    .replace(/```[\s\S]*?```/g, ' ')
+    // Remove inline code ` ... `
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove markdown links [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove headers #, ##, ###
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove bold/italic markers (* or _)
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, '$1')
+    // Remove bullet points / list numbers
+    .replace(/^[\s]*[-*+]\s+/gm, '')
+    .replace(/^[\s]*\d+\.\s+/gm, '')
+    // Remove blockquotes
+    .replace(/^>\s+/gm, '')
+    // Remove horizontal rules
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // Replace pipe tables and tildes
+    .replace(/[|~]/g, ' ')
+    // Normalize excessive spaces and linebreaks
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
+ * Intelligently selects the best SpeechSynthesisVoice based on text script and language.
+ *
+ * Requirements:
+ * - Hindi Devanagari: Prefer hi-IN voice.
+ * - English: Prefer en-IN or en-US voice.
+ * - Roman Hinglish: Prefer en-IN voice when available.
+ * - Fall back gracefully if the preferred voice is unavailable.
+ *
+ * @param {Object} options
+ * @param {SpeechSynthesisVoice[]} [options.voices=[]] - Array of available voices
+ * @param {string} [options.text=''] - The text to be spoken
+ * @param {string} [options.preferredLang='en-US'] - Configured voice language ('en-US' or 'hi-IN')
+ * @param {string} [options.selectedVoiceURI=''] - User's explicitly chosen voice URI in settings
+ * @returns {{ voice: SpeechSynthesisVoice | null, lang: string, textType: string }}
+ */
+export const selectBestVoice = ({
+  voices = [],
+  text = '',
+  preferredLang = 'en-US',
+  selectedVoiceURI = '',
+} = {}) => {
+  const textType = detectTextLanguage(text, preferredLang);
+
+  if (!Array.isArray(voices) || voices.length === 0) {
+    const lang =
+      textType === 'hindi-devanagari' ? 'hi-IN' : textType === 'roman-hinglish' ? 'en-IN' : preferredLang;
+    return { voice: null, lang, textType };
+  }
+
+  // Voice matchers
+  const isHiVoice = (v) => {
+    const l = (v.lang || '').toLowerCase();
+    return l === 'hi-in' || l.startsWith('hi');
+  };
+
+  const isEnInVoice = (v) => {
+    const l = (v.lang || '').toLowerCase();
+    const n = (v.name || '').toLowerCase();
+    return l === 'en-in' || (l.startsWith('en') && (n.includes('india') || n.includes('indian')));
+  };
+
+  const isEnUsVoice = (v) => {
+    const l = (v.lang || '').toLowerCase();
+    return l === 'en-us';
+  };
+
+  const isAnyEnVoice = (v) => {
+    const l = (v.lang || '').toLowerCase();
+    return l.startsWith('en');
+  };
+
+  const userSelected = selectedVoiceURI ? voices.find((v) => v.voiceURI === selectedVoiceURI) : null;
+
+  // 1. Hindi Devanagari: Prefer hi-IN voice
+  if (textType === 'hindi-devanagari') {
+    if (userSelected && isHiVoice(userSelected)) {
+      return { voice: userSelected, lang: 'hi-IN', textType };
+    }
+    const hiVoice = voices.find(isHiVoice);
+    if (hiVoice) {
+      return { voice: hiVoice, lang: 'hi-IN', textType };
+    }
+    // Graceful fallback if no hi-IN voice installed:
+    // Prefer en-IN (often has Indian phoneme handling) or user-selected or default
+    const fallback =
+      voices.find(isEnInVoice) ||
+      userSelected ||
+      voices.find((v) => v.default) ||
+      voices[0];
+    return { voice: fallback, lang: 'hi-IN', textType };
+  }
+
+  // 2. Roman Hinglish: Prefer en-IN voice when available
+  if (textType === 'roman-hinglish') {
+    if (userSelected && isEnInVoice(userSelected)) {
+      return { voice: userSelected, lang: 'en-IN', textType };
+    }
+    const enInVoice = voices.find(isEnInVoice);
+    if (enInVoice) {
+      return { voice: enInVoice, lang: 'en-IN', textType };
+    }
+    // Graceful fallback: user-selected > en-US > any en > hi > default
+    const fallback =
+      userSelected ||
+      voices.find(isEnUsVoice) ||
+      voices.find(isAnyEnVoice) ||
+      voices.find(isHiVoice) ||
+      voices.find((v) => v.default) ||
+      voices[0];
+    return { voice: fallback, lang: 'en-IN', textType };
+  }
+
+  // 3. English: Prefer en-IN or en-US voice
+  if (userSelected && isAnyEnVoice(userSelected)) {
+    return { voice: userSelected, lang: userSelected.lang || 'en-US', textType };
+  }
+  const enVoice =
+    voices.find(isEnInVoice) ||
+    voices.find(isEnUsVoice) ||
+    voices.find(isAnyEnVoice) ||
+    userSelected ||
+    voices.find((v) => v.default) ||
+    voices[0];
+
+  return { voice: enVoice, lang: enVoice?.lang || 'en-US', textType };
+};
+
+// Module-level persistent reference to prevent Chrome GC of active utterance
+let activeUtteranceInstance = null;
+
+/**
  * Speak text using native SpeechSynthesis with chunking and pause-resume keepalive for Chrome.
+ * Includes garbage-collection prevention and duplicate speech suppression.
+ *
  * @param {string} text
  * @param {Object} options
  * @returns {() => void} Cancel function
@@ -179,8 +355,21 @@ export const speakUtterance = (
     return () => {};
   }
 
-  // Always cancel any prior active utterance to prevent queue deadlock
-  synth.cancel();
+  // Always cancel any prior active utterance to prevent duplicate playback or queue deadlock
+  try {
+    synth.cancel();
+  } catch (e) {
+    // Ignore cancel errors
+  }
+
+  // Unpause engine if stuck in paused state in Chrome/Safari
+  if (synth.paused) {
+    try {
+      synth.resume();
+    } catch (e) {
+      // Ignore resume errors
+    }
+  }
 
   const utterance = new UtteranceClass(text.trim());
   utterance.lang = lang;
@@ -190,6 +379,12 @@ export const speakUtterance = (
 
   if (voice) {
     utterance.voice = voice;
+  }
+
+  // Retain persistent reference to prevent browser GC from cutting off speech midway
+  activeUtteranceInstance = utterance;
+  if (typeof window !== 'undefined') {
+    window.__nexaActiveUtterance = utterance;
   }
 
   // Chrome workaround: utterances longer than ~15 seconds can stall.
@@ -206,19 +401,26 @@ export const speakUtterance = (
     onStart(evt);
   };
 
-  utterance.onend = (evt) => {
+  const cleanup = () => {
     if (keepAliveInterval) {
       clearInterval(keepAliveInterval);
       keepAliveInterval = null;
     }
+    if (activeUtteranceInstance === utterance) {
+      activeUtteranceInstance = null;
+    }
+    if (typeof window !== 'undefined' && window.__nexaActiveUtterance === utterance) {
+      window.__nexaActiveUtterance = null;
+    }
+  };
+
+  utterance.onend = (evt) => {
+    cleanup();
     onEnd(evt);
   };
 
   utterance.onerror = (evt) => {
-    if (keepAliveInterval) {
-      clearInterval(keepAliveInterval);
-      keepAliveInterval = null;
-    }
+    cleanup();
     // "canceled" or "interrupted" is normal when stopped manually
     if (evt.error !== 'canceled' && evt.error !== 'interrupted') {
       onError(evt);
@@ -230,32 +432,42 @@ export const speakUtterance = (
   utterance.onpause = onPause;
   utterance.onresume = onResume;
 
-  synth.speak(utterance);
+  try {
+    synth.speak(utterance);
+  } catch (err) {
+    cleanup();
+    onError({ error: err.message || 'Failed to dispatch utterance to SpeechSynthesis.' });
+  }
 
   // Return cancel handle
   return () => {
-    if (keepAliveInterval) {
-      clearInterval(keepAliveInterval);
-      keepAliveInterval = null;
-    }
-    synth.cancel();
+    cleanup();
+    try {
+      synth.cancel();
+    } catch (e) {}
   };
 };
 
 export const cancelUtterance = () => {
   if (isSynthesisSupported()) {
-    window.speechSynthesis.cancel();
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {}
   }
 };
 
 export const pauseUtterance = () => {
   if (isSynthesisSupported()) {
-    window.speechSynthesis.pause();
+    try {
+      window.speechSynthesis.pause();
+    } catch (e) {}
   }
 };
 
 export const resumeUtterance = () => {
   if (isSynthesisSupported()) {
-    window.speechSynthesis.resume();
+    try {
+      window.speechSynthesis.resume();
+    } catch (e) {}
   }
 };

@@ -3,6 +3,7 @@ import { APP_CONFIG, ASSISTANT_STATES } from '../utils/constants';
 import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { checkMicrophonePermission } from '../services/voice.service';
+import { sendChatMessage, checkBackendHealth } from '../services/chat.service';
 
 const AppContext = createContext(null);
 
@@ -12,18 +13,22 @@ export function AppProvider({ children }) {
   const [assistantState, setAssistantState] = useState(ASSISTANT_STATES.IDLE);
   const [voiceErrorMessage, setVoiceErrorMessage] = useState('');
   const [commandInputText, setCommandInputText] = useState('');
+  const [conversationId, setConversationId] = useState(null);
 
   // Selected language for speech recognition and synthesis ('en-US' or 'hi-IN')
   const [voiceLanguage, setVoiceLanguageState] = useState('en-US');
 
-  // Connection States (No fabricated metrics)
+  // Connection States
   const [connectionStatus, setConnectionStatus] = useState({
     core: 'Ready',
+    backend: 'Checking...',
+    aiBrain: 'Checking...',
+    database: 'Checking...',
     desktopAgent: 'Not Connected',
     browserAutomation: 'Standby',
     audioEngine: 'Initializing...',
     memoryUsage: '--',
-    latency: 'Not Connected',
+    latency: '--',
   });
 
   // Notifications / Toast system
@@ -52,16 +57,48 @@ export function AppProvider({ children }) {
     {
       id: 'msg-init',
       sender: 'assistant',
-      text: 'Good day, Operator. NEXA 2.0 system core is initialized with browser voice interaction ready. How can I assist your workflow today?',
+      text: 'Good day, Operator. NEXA 2.0 AI Brain is connected and voice interaction is ready. How can I assist your workflow today?',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
 
-  // Ref to track assistantState for async callbacks
+  // Ref to track conversationId & assistantState for async callbacks
+  const conversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
   const assistantStateRef = useRef(assistantState);
   useEffect(() => {
     assistantStateRef.current = assistantState;
   }, [assistantState]);
+
+  // Backend, AI Brain & Database Health Check
+  const refreshBackendStatus = useCallback(async () => {
+    const health = await checkBackendHealth();
+    const dbRaw = health.details?.database?.status;
+    const dbFormatted =
+      dbRaw === 'connected' ? 'Connected' : dbRaw === 'disconnected' ? 'Disconnected' : dbRaw || (health.isOnline ? 'Online' : 'Offline');
+
+    setConnectionStatus((prev) => ({
+      ...prev,
+      backend: health.isOnline ? 'Connected' : 'Disconnected',
+      aiBrain: health.isOnline
+        ? health.geminiConfigured
+          ? `Active (${health.model})`
+          : 'Missing API Key'
+        : 'Offline',
+      database: health.isOnline ? dbFormatted : 'Offline',
+    }));
+    return health;
+  }, []);
+
+  useEffect(() => {
+    refreshBackendStatus();
+    // Periodically verify connection every 30 seconds
+    const interval = setInterval(refreshBackendStatus, 30000);
+    return () => clearInterval(interval);
+  }, [refreshBackendStatus]);
 
   // ----------------------------------------------------
   // Speech Synthesis Hook (TTS)
@@ -93,16 +130,33 @@ export function AppProvider({ children }) {
       setAssistantState(ASSISTANT_STATES.SPEAKING);
     },
     onEnd: () => {
-      // Return to IDLE if previously speaking
+      // Return to IDLE when speech finishes
       setAssistantState((prev) => (prev === ASSISTANT_STATES.SPEAKING ? ASSISTANT_STATES.IDLE : prev));
     },
     onError: (err) => {
-      setAssistantState((prev) => (prev === ASSISTANT_STATES.SPEAKING ? ASSISTANT_STATES.IDLE : prev));
+      // Set to ERROR when speech synthesis fails
+      setAssistantState((prev) => (prev === ASSISTANT_STATES.SPEAKING ? ASSISTANT_STATES.ERROR : prev));
       if (err?.message && err.message !== 'canceled' && err.message !== 'interrupted') {
         addToast('Voice Output Error', err.message, 'warning');
       }
     },
   });
+
+  // Track latest settings in refs for async callbacks
+  const ttsEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  const voiceLanguageRef = useRef(voiceLanguage);
+  useEffect(() => {
+    voiceLanguageRef.current = voiceLanguage;
+  }, [voiceLanguage]);
+
+  const selectedVoiceRef = useRef(selectedVoice);
+  useEffect(() => {
+    selectedVoiceRef.current = selectedVoice;
+  }, [selectedVoice]);
 
   // ----------------------------------------------------
   // Voice Recognition Hook (STT)
@@ -237,65 +291,189 @@ export function AppProvider({ children }) {
     }
   }, [assistantState, stopSpeaking, stopListening, clearVoiceError, startListening, voiceLanguage, addToast]);
 
-  // Command submission handler
-  const submitCommand = useCallback((commandText) => {
-    if (!commandText || !commandText.trim()) return;
+  // Ref to access current messages without triggering re-render cascades
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
-    // Stop listening if user manually dispatches
-    if (isListening) {
-      rawStopListening();
-    }
+  // Command & Chat Submission Handler (Phase 4 Gemini Brain Integration)
+  const submitCommand = useCallback(
+    async (commandText) => {
+      if (!commandText || !commandText.trim()) return;
 
-    const trimmed = commandText.trim();
-    const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      // Stop voice listening if currently listening
+      if (isListening) {
+        rawStopListening();
+      }
 
-    // 1. Append user message
-    const userMsg = {
-      id: `user-${Date.now()}`,
-      sender: 'user',
-      text: trimmed,
-      timestamp: timeNow,
-    };
+      // Stop speech immediately if currently active to prevent duplicate or overlapping playback
+      stopSpeaking();
 
-    setMessages((prev) => [...prev, userMsg]);
-    setAssistantState(ASSISTANT_STATES.PROCESSING);
+      const trimmed = commandText.trim();
+      const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // 2. Append to recent activity
-    setRecentActivity((prev) => [
-      {
-        id: `act-${Date.now()}`,
-        title: `Command: "${trimmed.length > 32 ? trimmed.substring(0, 32) + '...' : trimmed}"`,
-        description: 'Command parsed by operator interface. Desktop bridge disconnected.',
-        time: 'Just now',
-        type: 'command',
-        status: 'pending',
-      },
-      ...prev.slice(0, 7),
-    ]);
-
-    // 3. Realistic processing simulation with honest assistant response
-    setTimeout(() => {
-      const assistantMsg = {
-        id: `ast-${Date.now()}`,
-        sender: 'assistant',
-        text: `Instruction logged: "${trimmed}". The native Desktop Agent is currently disconnected (Phase 3). Once the desktop daemon connects, this task will execute directly on your workstation.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      // 1. Display user message
+      const userMsg = {
+        id: `user-${Date.now()}`,
+        sender: 'user',
+        text: trimmed,
+        timestamp: timeNow,
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [...prev, userMsg]);
 
-      // If text-to-speech is enabled, speak the assistant response
-      if (ttsEnabled && isSynthesisSupported) {
-        setAssistantState(ASSISTANT_STATES.SPEAKING);
-        rawSpeak(assistantMsg.text, {
-          lang: voiceLanguage,
-          voice: selectedVoice,
+      // 2. Change AI Orb to PROCESSING
+      setAssistantState(ASSISTANT_STATES.PROCESSING);
+      setVoiceErrorMessage('');
+
+      // Append to recent activity
+      const activityId = `act-${Date.now()}`;
+      setRecentActivity((prev) => [
+        {
+          id: activityId,
+          title: `Prompt: "${trimmed.length > 32 ? trimmed.substring(0, 32) + '...' : trimmed}"`,
+          description: 'Consulting NEXA AI Brain (Gemini)...',
+          time: 'Just now',
+          type: 'query',
+          status: 'processing',
+        },
+        ...prev.slice(0, 7),
+      ]);
+
+      // 3. Send message to backend and 4. Receive Gemini response
+      try {
+        const historySnapshot = [...messagesRef.current];
+        const result = await sendChatMessage({
+          message: trimmed,
+          conversationHistory: historySnapshot,
+          conversationId: conversationIdRef.current,
         });
-      } else {
-        setAssistantState(ASSISTANT_STATES.IDLE);
+
+        if (result.conversationId) {
+          setConversationId(result.conversationId);
+          conversationIdRef.current = result.conversationId;
+        }
+
+        // 5. Display assistant response
+        const assistantMsg = {
+          id: `ast-${Date.now()}`,
+          sender: 'assistant',
+          text: result.reply,
+          model: result.model,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+
+        setMessages((prev) => [...prev, assistantMsg]);
+
+        // Update telemetry state
+        setConnectionStatus((prev) => ({
+          ...prev,
+          backend: 'Connected',
+          aiBrain: `Active (${result.model})`,
+        }));
+
+        if (result.memoryAction === 'remembered') {
+          addToast('Persistent Memory Saved', 'NEXA stored this preference in MongoDB.', 'success');
+        } else if (result.memoryAction === 'forgotten') {
+          addToast('Memory Removed', 'NEXA removed this entry from persistent storage.', 'info');
+        }
+
+        setRecentActivity((prev) =>
+          prev.map((act) =>
+            act.id === activityId
+              ? { ...act, status: 'completed', description: `Replied by ${result.model}` }
+              : act
+          )
+        );
+
+        // 6. Automatically speak response if voice output is enabled (both voice & typed inputs)
+        if (ttsEnabledRef.current && isSynthesisSupported) {
+          const spoke = rawSpeak(result.reply, {
+            lang: voiceLanguageRef.current,
+            voice: selectedVoiceRef.current,
+          });
+          if (spoke) {
+            setAssistantState(ASSISTANT_STATES.SPEAKING);
+          } else {
+            setAssistantState(ASSISTANT_STATES.IDLE);
+          }
+        } else {
+          // If voice output is disabled, return Orb to IDLE
+          setAssistantState(ASSISTANT_STATES.IDLE);
+        }
+      } catch (err) {
+        console.error('[NEXA AI Brain Error]:', err);
+        const errorMessage = err.message || 'Unable to connect to NEXA AI brain.';
+        setVoiceErrorMessage(errorMessage);
+        setAssistantState(ASSISTANT_STATES.ERROR);
+
+        const errorMsg = {
+          id: `err-${Date.now()}`,
+          sender: 'assistant',
+          text: `⚠️ NEXA Brain Error: ${errorMessage}`,
+          isError: true,
+          canRetry: true,
+          retryText: trimmed,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+
+        setMessages((prev) => [...prev, errorMsg]);
+
+        setRecentActivity((prev) =>
+          prev.map((act) =>
+            act.id === activityId
+              ? { ...act, status: 'failed', description: 'Brain reasoning failed' }
+              : act
+          )
+        );
+
+        addToast('AI Brain Alert', errorMessage, 'error');
       }
-    }, 700);
-  }, [isListening, rawStopListening, ttsEnabled, isSynthesisSupported, rawSpeak, voiceLanguage, selectedVoice]);
+    },
+    [
+      isListening,
+      rawStopListening,
+      isSpeaking,
+      stopSpeaking,
+      ttsEnabled,
+      isSynthesisSupported,
+      rawSpeak,
+      voiceLanguage,
+      selectedVoice,
+      addToast,
+    ]
+  );
+
+  // Retry a failed command
+  const retryMessage = useCallback(
+    (textToRetry) => {
+      if (!textToRetry) return;
+      // Remove any trailing error message that matches this retry
+      setMessages((prev) => prev.filter((m) => !(m.isError && m.retryText === textToRetry)));
+      submitCommand(textToRetry);
+    },
+    [submitCommand]
+  );
+
+  // Clear conversation history
+  const clearConversation = useCallback(() => {
+    if (isSpeaking) {
+      stopSpeaking();
+    }
+    const initMsg = {
+      id: `msg-init-${Date.now()}`,
+      sender: 'assistant',
+      text: 'Session reset. NEXA 2.0 AI Brain is online and ready for your commands.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages([initMsg]);
+    setConversationId(null);
+    conversationIdRef.current = null;
+    setAssistantState(ASSISTANT_STATES.IDLE);
+    setVoiceErrorMessage('');
+    addToast('Conversation Cleared', 'Active dialogue history has been reset.', 'info');
+  }, [isSpeaking, stopSpeaking, addToast]);
 
   return (
     <AppContext.Provider
@@ -311,6 +489,7 @@ export function AppProvider({ children }) {
         clearVoiceError,
         handleOrbClick,
         connectionStatus,
+        refreshBackendStatus,
         toasts,
         addToast,
         removeToast,
@@ -318,6 +497,9 @@ export function AppProvider({ children }) {
         activeTasks,
         messages,
         submitCommand,
+        retryMessage,
+        clearConversation,
+        conversationId,
         commandInputText,
         setCommandInputText,
 

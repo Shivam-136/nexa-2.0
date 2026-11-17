@@ -7,12 +7,14 @@ import {
   pauseUtterance,
   resumeUtterance,
   filterVoicesByLanguage,
+  selectBestVoice,
+  cleanTextForSpeech,
 } from '../services/voice.service';
 
 /**
  * Custom React Hook for browser-native SpeechSynthesis (Text-to-Speech).
  * Handles voice listing, voice selection, speaking state, speech rate/pitch/volume controls,
- * and speech enable/disable preferences.
+ * intelligent voice & script matching, and speech enable/disable preferences.
  */
 export function useSpeechSynthesis({
   defaultRate = 1.0,
@@ -40,6 +42,8 @@ export function useSpeechSynthesis({
   const onStartRef = useRef(onStart);
   const onEndRef = useRef(onEnd);
   const onErrorRef = useRef(onError);
+  const voicesRef = useRef(voices);
+  const selectedVoiceURIRef = useRef(selectedVoiceURI);
 
   useEffect(() => {
     onStartRef.current = onStart;
@@ -53,6 +57,14 @@ export function useSpeechSynthesis({
     onErrorRef.current = onError;
   }, [onError]);
 
+  useEffect(() => {
+    voicesRef.current = voices;
+  }, [voices]);
+
+  useEffect(() => {
+    selectedVoiceURIRef.current = selectedVoiceURI;
+  }, [selectedVoiceURI]);
+
   // Load voices asynchronously
   useEffect(() => {
     if (!isSupported) return;
@@ -62,10 +74,10 @@ export function useSpeechSynthesis({
     getAvailableVoices().then((availableVoices) => {
       if (!mounted) return;
       setVoices(availableVoices);
+      voicesRef.current = availableVoices;
 
-      // Default voice selection strategy
+      // Default voice selection strategy if not yet set
       if (availableVoices.length > 0 && !selectedVoiceURI) {
-        // Look for default voice or matching language voice
         const matched =
           availableVoices.find((v) => v.lang === defaultLang) ||
           availableVoices.find((v) => v.lang.startsWith(defaultLang.split('-')[0])) ||
@@ -74,6 +86,7 @@ export function useSpeechSynthesis({
 
         if (matched) {
           setSelectedVoiceURI(matched.voiceURI);
+          selectedVoiceURIRef.current = matched.voiceURI;
         }
       }
     });
@@ -104,22 +117,45 @@ export function useSpeechSynthesis({
         return false;
       }
 
-      // Cancel any ongoing speech first
-      if (activeCancelRef.current) {
-        activeCancelRef.current();
-        activeCancelRef.current = null;
+      // Clean markdown, code fences, and awkward symbols for natural voice pronunciation
+      const cleanedText = cleanTextForSpeech(text);
+      if (!cleanedText) {
+        return false;
       }
 
-      const voice = overrideOptions.voice !== undefined
-        ? overrideOptions.voice
-        : selectedVoice;
+      // Stop any active utterance first to prevent duplicate speech
+      if (activeCancelRef.current) {
+        try {
+          activeCancelRef.current();
+        } catch (e) {}
+        activeCancelRef.current = null;
+      } else {
+        cancelUtterance();
+      }
 
-      const lang = overrideOptions.lang || (voice ? voice.lang : defaultLang);
+      // Intelligent voice and script selection
+      const availableVoices = voicesRef.current.length > 0 ? voicesRef.current : voices;
+      const targetLang = overrideOptions.lang || defaultLang;
+
+      let voice = overrideOptions.voice;
+      let lang = targetLang;
+
+      if (!voice) {
+        const resolution = selectBestVoice({
+          voices: availableVoices,
+          text: cleanedText,
+          preferredLang: targetLang,
+          selectedVoiceURI: selectedVoiceURIRef.current,
+        });
+        voice = resolution.voice;
+        lang = resolution.lang;
+      }
+
       const rate = overrideOptions.rate !== undefined ? overrideOptions.rate : speechRate;
       const pitch = overrideOptions.pitch !== undefined ? overrideOptions.pitch : speechPitch;
       const volume = overrideOptions.volume !== undefined ? overrideOptions.volume : speechVolume;
 
-      const cancelFn = speakUtterance(text, {
+      const cancelFn = speakUtterance(cleanedText, {
         voice,
         lang,
         rate,
@@ -155,7 +191,7 @@ export function useSpeechSynthesis({
     [
       isSupported,
       ttsEnabled,
-      selectedVoice,
+      voices,
       defaultLang,
       speechRate,
       speechPitch,
@@ -163,10 +199,12 @@ export function useSpeechSynthesis({
     ]
   );
 
-  // Stop speaking
+  // Stop speaking immediately
   const stop = useCallback(() => {
     if (activeCancelRef.current) {
-      activeCancelRef.current();
+      try {
+        activeCancelRef.current();
+      } catch (e) {}
       activeCancelRef.current = null;
     } else {
       cancelUtterance();
@@ -190,7 +228,7 @@ export function useSpeechSynthesis({
   // Test voice helper
   const testVoice = useCallback(
     (sampleText = 'NEXA 2.0 voice synthesis test.') => {
-      speak(sampleText, { force: true });
+      return speak(sampleText, { force: true });
     },
     [speak]
   );
@@ -203,7 +241,9 @@ export function useSpeechSynthesis({
   useEffect(() => {
     return () => {
       if (activeCancelRef.current) {
-        activeCancelRef.current();
+        try {
+          activeCancelRef.current();
+        } catch (e) {}
       } else {
         cancelUtterance();
       }
@@ -238,4 +278,3 @@ export function useSpeechSynthesis({
 }
 
 export default useSpeechSynthesis;
-
