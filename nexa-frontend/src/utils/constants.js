@@ -17,11 +17,45 @@ export const ROUTES = {
   HISTORY: '/history',
   DESKTOP: '/desktop',
   SETTINGS: '/settings',
+  LOGIN: '/login',
+  REGISTER: '/register',
+};
+
+const resolveBaseUrl = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:5000/api`;
+  }
+  return 'http://localhost:5000/api';
+};
+
+const resolveAuthBaseUrl = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AUTH_BASE_URL) {
+    return import.meta.env.VITE_AUTH_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:5000/api/v1/auth`;
+  }
+  return 'http://localhost:5000/api/v1/auth';
+};
+
+const resolveWsUrl = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_BASE_URL) {
+    return import.meta.env.VITE_WS_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${window.location.hostname}:5000/ws`;
+  }
+  return 'ws://localhost:5000/ws';
 };
 
 export const API_ENDPOINTS = {
-  BASE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'http://localhost:5000/api',
-  WS_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_BASE_URL) || 'ws://localhost:5000/ws',
+  BASE_URL: resolveBaseUrl(),
+  AUTH_BASE_URL: resolveAuthBaseUrl(),
+  WS_URL: resolveWsUrl(),
   DESKTOP_BRIDGE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_DESKTOP_BRIDGE_URL) || 'ws://localhost:9001/desktop',
   MEMORIES: '/memories',
   CONVERSATIONS: '/conversations',

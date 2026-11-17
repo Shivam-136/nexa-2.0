@@ -1,12 +1,26 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
-import { Menu, ShieldAlert, Bell, User, Sparkles } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Menu, ShieldAlert, Bell, User, Sparkles, LogOut } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { ROUTES } from '../../utils/constants';
 
 export default function TopHeader() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { setMobileMenuOpen, connectionStatus, addToast } = useAppContext();
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      addToast('Signed Out', 'Your operator session has been closed securely.', 'info');
+      navigate(ROUTES.LOGIN);
+    } catch (err) {
+      addToast('Logout Notice', 'Session cleared.', 'info');
+      navigate(ROUTES.LOGIN);
+    }
+  };
 
   const getPageInfo = () => {
     switch (location.pathname) {
@@ -118,15 +132,27 @@ export default function TopHeader() {
           <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
         </button>
 
-        {/* Profile / Operator Badge */}
+        {/* Profile / Operator Badge & Logout */}
         <div className="flex items-center space-x-2 pl-2 border-l border-slate-800">
           <div className="h-8 w-8 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center text-blue-400 shadow-inner">
             <User className="h-4 w-4" />
           </div>
           <div className="hidden xl:block text-left text-xs">
-            <p className="font-semibold text-slate-200 leading-none">Operator</p>
-            <p className="text-[10px] text-slate-500 font-mono mt-0.5">LOCAL_ADMIN</p>
+            <p className="font-semibold text-slate-200 leading-none truncate max-w-[120px]">
+              {user?.displayName || user?.email?.split('@')[0] || 'Operator'}
+            </p>
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate max-w-[120px]">
+              {user?.email || 'AUTH_ACTIVE'}
+            </p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Sign out of NEXA 2.0"
+            className="p-1.5 ml-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-colors"
+            aria-label="Sign Out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </header>

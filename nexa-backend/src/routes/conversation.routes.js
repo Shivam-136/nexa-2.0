@@ -6,6 +6,7 @@ import {
   deleteConversation,
   clearConversations,
 } from '../controllers/conversation.controller.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ const conversationLimiter = rateLimit({
 });
 
 router.use(conversationLimiter);
+router.use(requireAuth);
 
 router.get('/', listConversations);
 router.get('/:id', getConversation);

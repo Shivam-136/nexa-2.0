@@ -1,6 +1,19 @@
 import { API_ENDPOINTS } from '../utils/constants.js';
+import { getAccessToken } from './auth.service.js';
 
 const BASE_URL = API_ENDPOINTS.BASE_URL;
+
+/**
+ * Returns request headers including Bearer token if user is signed in.
+ */
+function getAuthHeaders(customHeaders = {}) {
+  const token = typeof getAccessToken === 'function' ? getAccessToken() : null;
+  return {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...customHeaders,
+  };
+}
 
 /**
  * Retrieves saved persistent memories from the backend.
@@ -24,7 +37,8 @@ export async function fetchMemories({ category, search, page = 1, limit = 50 } =
   try {
     const response = await fetch(url, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -58,10 +72,10 @@ export async function createMemory({ value, category = 'preference', key, rawInp
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
+      headers: getAuthHeaders({
         'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify({
         value: value.trim(),
         category,
@@ -84,6 +98,41 @@ export async function createMemory({ value, category = 'preference', key, rawInp
 }
 
 /**
+ * Updates an existing memory.
+ *
+ * @param {string} id
+ * @param {Object} updateData
+ * @returns {Promise<{ success: boolean, memory: Object }>}
+ */
+export async function updateMemory(id, { value, category, key }) {
+  if (!id) throw new Error('Memory ID is required.');
+
+  const url = `${BASE_URL}/memories/${id}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: getAuthHeaders({
+        'Content-Type': 'application/json',
+      }),
+      credentials: 'include',
+      body: JSON.stringify({ value, category, key }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || `Failed to update memory (${response.status})`);
+    }
+
+    return data;
+  } catch (err) {
+    console.error('[Memory Service Update Error]:', err.message);
+    throw err;
+  }
+}
+
+/**
  * Deletes an individual memory by ID.
  *
  * @param {string} id
@@ -97,7 +146,8 @@ export async function deleteMemory(id) {
   try {
     const response = await fetch(url, {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     const data = await response.json().catch(() => ({}));
@@ -124,7 +174,8 @@ export async function clearAllMemories() {
   try {
     const response = await fetch(url, {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     const data = await response.json().catch(() => ({}));
@@ -154,7 +205,8 @@ export async function fetchConversations({ page = 1, limit = 30 } = {}) {
   try {
     const response = await fetch(url, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -182,7 +234,8 @@ export async function fetchConversation(id) {
   try {
     const response = await fetch(url, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -210,7 +263,8 @@ export async function deleteConversation(id) {
   try {
     const response = await fetch(url, {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -228,6 +282,7 @@ export async function deleteConversation(id) {
 export default {
   fetchMemories,
   createMemory,
+  updateMemory,
   deleteMemory,
   clearAllMemories,
   fetchConversations,

@@ -7,6 +7,7 @@ import {
   deleteMemory,
   clearMemories,
 } from '../controllers/memory.controller.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ const memoryLimiter = rateLimit({
 });
 
 router.use(memoryLimiter);
+router.use(requireAuth);
 
 router.get('/', getMemories);
 router.post('/', createMemory);

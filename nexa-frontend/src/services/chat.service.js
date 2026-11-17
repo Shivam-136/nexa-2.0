@@ -1,4 +1,5 @@
 import { API_ENDPOINTS } from '../utils/constants.js';
+import { getAccessToken } from './auth.service.js';
 
 const BASE_URL = API_ENDPOINTS.BASE_URL;
 
@@ -60,12 +61,15 @@ export async function sendChatMessage({
   }
 
   try {
+    const token = typeof getAccessToken === 'function' ? getAccessToken() : null;
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
+      credentials: 'include',
       body: JSON.stringify(payload),
       signal,
     });

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { handleChatMessage, getChatStatus } from '../controllers/chat.controller.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ const chatLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post('/', chatLimiter, handleChatMessage);
+router.post('/', chatLimiter, requireAuth, handleChatMessage);
 router.get('/status', getChatStatus);
 
 export default router;

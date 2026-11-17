@@ -13,7 +13,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
  * Default Gemini model configuration.
  * Recommended model for fast, capable multimodal & chat reasoning.
  */
-export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 
 /**
  * Checks whether a valid Gemini API key is configured.

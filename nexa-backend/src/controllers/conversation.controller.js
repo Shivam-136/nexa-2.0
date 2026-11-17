@@ -2,13 +2,18 @@ import Conversation from '../models/conversation.model.js';
 import mongoose from 'mongoose';
 
 /**
- * Extracts userId from request.
+ * Extracts userId strictly from verified authentication middleware.
+ * Never trusts userId from headers, query, or body.
  */
 function getRequestUserId(req) {
-  const headerUser = req.headers['x-user-id'];
-  const queryUser = req.query?.userId;
-  const bodyUser = req.body?.userId;
-  return (headerUser || queryUser || bodyUser || 'shivam').trim();
+  if (req.user?.id) {
+    return req.user.id.toString();
+  }
+  // Internal fallback for unit tests running without auth middleware
+  if (req.userId) {
+    return req.userId.toString();
+  }
+  return 'shivam';
 }
 
 /**

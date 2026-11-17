@@ -105,6 +105,15 @@ export async function handleChatMessage(req, res, next) {
       });
     }
 
+    // Derive user identity strictly from verified authentication middleware when available.
+    // Never trust frontend-supplied ownership IDs.
+    const effectiveUserId = req.user?.id ? req.user.id.toString() : (req.userId || userId);
+
+    // Dynamic user context reflecting authenticated user
+    const effectiveUserContext = sanitizedUserContext || (req.user ? {
+      userName: req.user.displayName || req.user.email.split('@')[0],
+    } : undefined);
+
     // Generate or preserve conversationId
     const conversationId =
       req.body.conversationId && typeof req.body.conversationId === 'string'
@@ -112,8 +121,8 @@ export async function handleChatMessage(req, res, next) {
         : `conv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // If userContext is passed explicitly in request, store for this session
-    if (sanitizedUserContext) {
-      setSessionUserContext(conversationId, sanitizedUserContext);
+    if (effectiveUserContext) {
+      setSessionUserContext(conversationId, effectiveUserContext);
     }
 
     // 1. Check for explicit Remember / Forget intent (Phase 5)
@@ -122,7 +131,7 @@ export async function handleChatMessage(req, res, next) {
     if (intent.isIntent && intent.type === 'remember') {
       try {
         const { memory } = await saveMemory({
-          userId,
+          userId: effectiveUserId,
           value: intent.target,
           rawInput: sanitizedMessage,
           metadata: { source: 'chat', language: intent.language },
@@ -133,7 +142,7 @@ export async function handleChatMessage(req, res, next) {
         // Asynchronously persist conversation turn
         persistConversationTurn({
           conversationId,
-          userId,
+          userId: effectiveUserId,
           userText: sanitizedMessage,
           assistantReply: reply,
           model: 'NEXA Memory Engine',
@@ -155,7 +164,7 @@ export async function handleChatMessage(req, res, next) {
     } else if (intent.isIntent && intent.type === 'forget') {
       try {
         const result = await forgetMemory({
-          userId,
+          userId: effectiveUserId,
           target: intent.target,
         });
 
@@ -164,7 +173,7 @@ export async function handleChatMessage(req, res, next) {
         // Asynchronously persist conversation turn
         persistConversationTurn({
           conversationId,
-          userId,
+          userId: effectiveUserId,
           userText: sanitizedMessage,
           assistantReply: reply,
           model: 'NEXA Memory Engine',
@@ -189,7 +198,7 @@ export async function handleChatMessage(req, res, next) {
     let relevantMemories = [];
     try {
       relevantMemories = await getRelevantMemories({
-        userId,
+        userId: effectiveUserId,
         query: sanitizedMessage,
         limit: 10,
       });
@@ -201,7 +210,7 @@ export async function handleChatMessage(req, res, next) {
     const { reply, model } = await generateAiReply({
       message: sanitizedMessage,
       conversationHistory: sanitizedHistory,
-      userContext: sanitizedUserContext,
+      userContext: effectiveUserContext,
       sessionId: conversationId,
       memories: relevantMemories,
     });
@@ -209,7 +218,7 @@ export async function handleChatMessage(req, res, next) {
     // 4. Asynchronously persist conversation turn into MongoDB
     persistConversationTurn({
       conversationId,
-      userId,
+      userId: effectiveUserId,
       userText: sanitizedMessage,
       assistantReply: reply,
       model,

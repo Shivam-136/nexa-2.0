@@ -20,8 +20,13 @@ import {
   Sparkles,
   Database,
   Brain,
+  UserCheck,
+  User,
+  Shield,
+  DownloadCloud,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { APP_CONFIG, API_ENDPOINTS, VOICE_LANGUAGES } from '../utils/constants';
 import MemoryManagement from '../components/settings/MemoryManagement';
 
@@ -52,6 +57,8 @@ export default function SettingsPage() {
     stopSpeaking,
   } = useAppContext();
 
+  const { user, updatePreferences, claimLegacy } = useAuth();
+
   const [settings, setSettings] = useState({
     operatorName: 'Operator',
     apiBaseUrl: API_ENDPOINTS.BASE_URL,
@@ -59,8 +66,17 @@ export default function SettingsPage() {
     autoReconnect: true,
   });
 
+  const [profileState, setProfileState] = useState({
+    displayName: user?.displayName || '',
+    aiProvider: user?.aiProvider || 'gemini',
+    ollamaModel: user?.ollamaModel || 'llama3',
+    geminiFallback: user?.geminiFallback ?? true,
+    voiceLanguage: user?.voiceLanguage || 'en-US',
+  });
+
   const [isTestingMic, setIsTestingMic] = useState(false);
   const [isPingingBackend, setIsPingingBackend] = useState(false);
+  const [isClaimingLegacy, setIsClaimingLegacy] = useState(false);
 
   const handleTestMic = async () => {
     setIsTestingMic(true);
@@ -92,9 +108,32 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    addToast('Settings Saved', 'Operator preferences and voice configuration updated.', 'success');
+  const handleClaimLegacyClick = async () => {
+    setIsClaimingLegacy(true);
+    try {
+      const res = await claimLegacy();
+      addToast(
+        'Legacy Migration Complete',
+        res.message || 'Legacy records claimed successfully.',
+        'success'
+      );
+    } catch (err) {
+      addToast('Migration Error', err.message || 'Could not claim legacy records.', 'error');
+    } finally {
+      setIsClaimingLegacy(false);
+    }
+  };
+
+  const handleSave = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    try {
+      if (updatePreferences) {
+        await updatePreferences(profileState);
+      }
+      addToast('Settings Saved', 'Operator preferences and AI configuration updated.', 'success');
+    } catch (err) {
+      addToast('Save Failed', err.message || 'Failed to update preferences.', 'error');
+    }
   };
 
   const handleReset = () => {
@@ -102,6 +141,13 @@ export default function SettingsPage() {
     setSpeechPitch(1.0);
     setTtsEnabled(true);
     setVoiceLanguage('en-US');
+    setProfileState({
+      displayName: user?.displayName || '',
+      aiProvider: 'gemini',
+      ollamaModel: 'llama3',
+      geminiFallback: true,
+      voiceLanguage: 'en-US',
+    });
     addToast('Defaults Restored', 'Configuration settings returned to default baseline.', 'info');
   };
 
@@ -147,6 +193,103 @@ export default function SettingsPage() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        {/* Section 0: Operator Identity & Multi-Tenant Preferences (Phase 6 Milestone 1) */}
+        <div className="p-6 rounded-3xl glass-card space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+            <div className="flex items-center space-x-2">
+              <UserCheck className="h-4 w-4 text-blue-400" />
+              <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
+                Operator Identity &amp; Multi-Tenant Profile
+              </h3>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono border bg-blue-500/10 text-blue-400 border-blue-500/20 flex items-center space-x-1">
+                <Shield className="h-3 w-3" />
+                <span>USER_ISOLATION_ACTIVE</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+            {/* Operator Account Info */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200">Account Credentials</span>
+                <span className="font-mono text-[10px] text-slate-400">ID: {user?.id?.slice(-8) || 'LOCAL'}</span>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Email (Authenticated)</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={user?.email || 'operator@nexa.ai'}
+                    className="w-full px-3 py-1.5 rounded-xl bg-slate-900/50 border border-slate-800 text-slate-400 font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Display Name</label>
+                  <input
+                    type="text"
+                    value={profileState.displayName}
+                    onChange={(e) => setProfileState({ ...profileState, displayName: e.target.value })}
+                    placeholder="Operator"
+                    className="w-full px-3 py-1.5 rounded-xl glass-input text-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* AI Provider & Legacy Migration */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200">AI Model Preferences</span>
+                <span className="font-mono text-cyan-400 text-[11px]">{profileState.aiProvider.toUpperCase()}</span>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Primary AI Provider</label>
+                  <select
+                    value={profileState.aiProvider}
+                    onChange={(e) => setProfileState({ ...profileState, aiProvider: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-xl glass-input text-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="gemini" className="bg-slate-900 text-white">Google Gemini (Cloud Brain)</option>
+                    <option value="ollama" className="bg-slate-900 text-white">Ollama Local (Phase 6 M3 Bridge)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="space-y-0.5">
+                    <label className="text-[11px] text-slate-300 font-medium">Gemini Fallback</label>
+                    <p className="text-[10px] text-slate-500">Fall back to Gemini if local model fails</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={profileState.geminiFallback}
+                    onChange={(e) => setProfileState({ ...profileState, geminiFallback: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-0 cursor-pointer"
+                  />
+                </div>
+
+                {/* Legacy Data Claim */}
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">Phase 5 Legacy Migration</span>
+                  <button
+                    type="button"
+                    onClick={handleClaimLegacyClick}
+                    disabled={isClaimingLegacy}
+                    className="px-3 py-1 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    <DownloadCloud className={`h-3 w-3 ${isClaimingLegacy ? 'animate-bounce' : ''}`} />
+                    <span>{isClaimingLegacy ? 'Claiming...' : 'Claim "shivam" Records'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Section 1: AI Reasoning & Backend Status (Phase 4 Gemini Integration) */}
         <div className="p-6 rounded-3xl glass-card space-y-5">
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">

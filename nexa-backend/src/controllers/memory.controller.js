@@ -9,13 +9,18 @@ import Memory, { MEMORY_CATEGORIES } from '../models/memory.model.js';
 import mongoose from 'mongoose';
 
 /**
- * Helper to extract userId from request headers or query.
+ * Helper to extract userId strictly from verified authentication middleware.
+ * Never trusts userId from headers, body, or query strings.
  */
 function getRequestUserId(req) {
-  const headerUser = req.headers['x-user-id'];
-  const queryUser = req.query?.userId;
-  const bodyUser = req.body?.userId;
-  return (headerUser || queryUser || bodyUser || 'shivam').trim();
+  if (req.user?.id) {
+    return req.user.id.toString();
+  }
+  // Internal fallback for unit tests running without auth middleware
+  if (req.userId) {
+    return req.userId.toString();
+  }
+  return 'shivam';
 }
 
 /**
