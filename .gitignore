@@ -1,0 +1,4 @@
+
+# Keep all environment files local
+.env
+.env.*
