@@ -377,7 +377,7 @@ export default function AssistantPage() {
                         <span>Retry Prompt</span>
                       </button>
                       <span className="text-[11px] text-rose-400/80">
-                        Check backend terminal and GEMINI_API_KEY if error persists.
+                        Check backend terminal or AI provider status if error persists.
                       </span>
                     </div>
                   )}
@@ -401,7 +401,7 @@ export default function AssistantPage() {
                   <span className="font-semibold text-slate-200">NEXA 2.0</span>
                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 flex items-center space-x-1">
                     <Sparkles className="h-3 w-3 animate-spin" />
-                    <span>Gemini Reasoning</span>
+                    <span>{activeProvider === 'gemini' ? 'Gemini Reasoning' : 'Ollama Reasoning'}</span>
                   </span>
                 </div>
                 <div className="flex items-center space-x-1.5 py-1">

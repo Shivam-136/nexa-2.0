@@ -392,7 +392,7 @@ export async function forgetMemory({ userId = 'shivam', target }) {
 }
 
 /**
- * Retrieves relevant active memories for context injection into Gemini requests.
+ * Retrieves relevant active memories for context injection into AI reasoning requests.
  * Prioritizes user preferences and memories matching the query terms.
  * Avoids sending unnecessary or unrelated memories to preserve token budget.
  *
@@ -458,7 +458,7 @@ export async function getRelevantMemories({ userId = 'shivam', query = '', limit
 }
 
 /**
- * Formats an array of memories into a structured markdown block for the Gemini system prompt.
+ * Formats an array of memories into a structured markdown block for the AI system prompt.
  *
  * @param {Array<Object>} memories
  * @returns {string} Formatted instructions section
@@ -561,7 +561,7 @@ export async function persistConversationTurn({
       sender: 'assistant',
       role: 'model',
       text: assistantReply,
-      model: model || 'Gemini',
+      model: model || 'llama3.2',
       timestamp: new Date(),
     };
 

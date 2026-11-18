@@ -310,7 +310,7 @@ export function AppProvider({ children }) {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Command & Chat Submission Handler (Phase 4 Gemini Brain Integration)
+  // Command & Chat Submission Handler (AI Brain Provider Integration)
   const submitCommand = useCallback(
     async (commandText) => {
       if (!commandText || !commandText.trim()) return;

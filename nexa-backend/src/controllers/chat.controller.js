@@ -161,7 +161,7 @@ export async function handleChatMessage(req, res, next) {
         });
       } catch (memErr) {
         console.warn('[Memory Save Error]:', memErr.message);
-        // If DB fails, fall through to regular Gemini processing with warning
+        // If DB fails, fall through to regular AI processing with warning
       }
     } else if (intent.isIntent && intent.type === 'forget') {
       try {
@@ -192,7 +192,7 @@ export async function handleChatMessage(req, res, next) {
         });
       } catch (memErr) {
         console.warn('[Memory Forget Error]:', memErr.message);
-        // If DB fails, fall through to regular Gemini processing
+        // If DB fails, fall through to regular AI processing
       }
     }
 
@@ -255,8 +255,8 @@ export function getChatStatus(req, res) {
     geminiConfigured: configured,
     defaultProvider: 'ollama',
     message: configured
-      ? 'Gemini AI Brain is active and ready to process requests.'
-      : 'Gemini API key is not configured on the backend.',
+      ? 'NEXA 2.0 AI Brain Core is active and ready (Ollama-first local inference, Gemini cloud fallback available).'
+      : 'NEXA 2.0 AI Brain Core is ready with Ollama-first local inference.',
   });
 }
 

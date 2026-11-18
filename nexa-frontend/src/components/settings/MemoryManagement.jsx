@@ -186,7 +186,7 @@ export default function MemoryManagement({ addToast }) {
               <Sparkles className="h-3.5 w-3.5 text-purple-400" />
               <span>Record New Memory</span>
             </span>
-            <span className="text-[11px] text-slate-400">Will be injected into Gemini reasoning</span>
+            <span className="text-[11px] text-slate-400">Will be injected into AI reasoning</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

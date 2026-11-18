@@ -29,7 +29,7 @@ export function prepareConversationHistory(messages = []) {
 }
 
 /**
- * Dispatches a chat query to the NEXA 2.0 Gemini backend brain.
+ * Dispatches a chat query to the NEXA 2.0 AI backend brain (Ollama local / Gemini cloud).
  *
  * @param {Object} options
  * @param {string} options.message - The user prompt or spoken query.
@@ -122,7 +122,7 @@ export async function sendChatMessage({
 }
 
 /**
- * Queries the backend service health and Gemini configuration status.
+ * Queries the backend service health and AI configuration status.
  *
  * @returns {Promise<{ isOnline: boolean, geminiConfigured: boolean, model: string, details?: any, error?: string }>}
  */

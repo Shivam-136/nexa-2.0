@@ -98,9 +98,13 @@ describe('NEXA 2.0 Backend AI Service Test Suite', () => {
       assert.equal(DEFAULT_USER_CONTEXT.developer, 'Shivam');
       assert.equal(DEFAULT_USER_CONTEXT.technology.frontend, 'React + Vite');
       assert.equal(DEFAULT_USER_CONTEXT.technology.backend, 'Node.js + Express');
-      assert.equal(DEFAULT_USER_CONTEXT.technology.ai, 'Google Gemini API');
-      assert.equal(DEFAULT_USER_CONTEXT.technology.voice, 'Browser SpeechRecognition and SpeechSynthesis');
-      assert.ok(DEFAULT_USER_CONTEXT.technology.desktopAgent.includes('Planned future phase'));
+      assert.ok(DEFAULT_USER_CONTEXT.technology.ai.includes('Ollama Local'));
+      assert.equal(DEFAULT_USER_CONTEXT.technology.primaryAi, 'Ollama Local');
+      assert.equal(DEFAULT_USER_CONTEXT.technology.defaultModel, 'llama3.2:latest');
+      assert.equal(DEFAULT_USER_CONTEXT.technology.fallbackAi, 'Google Gemini API');
+      assert.equal(DEFAULT_USER_CONTEXT.technology.database, 'MongoDB + Mongoose');
+      assert.ok(DEFAULT_USER_CONTEXT.technology.voice.includes('Web Speech API'));
+      assert.ok(DEFAULT_USER_CONTEXT.technology.desktopAgent.includes('Electron Desktop Agent'));
     });
 
     it('buildSystemInstruction should dynamically inject custom userContext while preserving rules', () => {
@@ -268,6 +272,71 @@ describe('NEXA 2.0 Backend AI Service Test Suite', () => {
       const normalized = normalizeGeminiError(err);
       assert.equal(normalized.statusCode, 500);
       assert.ok(normalized.message.includes('internal error'));
+    });
+  });
+
+  describe('5. Ollama-First AI Identity & Provider-Aware Instructions', () => {
+    it('NEXA_SYSTEM_INSTRUCTION should identify Ollama Local as primary provider and llama3.2:latest as default', () => {
+      assert.ok(NEXA_SYSTEM_INSTRUCTION.includes('Primary AI Provider: Ollama Local'));
+      assert.ok(NEXA_SYSTEM_INSTRUCTION.includes('llama3.2:latest'));
+      assert.ok(NEXA_SYSTEM_INSTRUCTION.includes('Optional Cloud Provider: Google Gemini API'));
+    });
+
+    it('buildSystemInstruction for Ollama should strictly forbid claiming Gemini is active', () => {
+      const instruction = buildSystemInstruction({
+        activeProvider: 'ollama',
+        activeModel: 'llama3.2:latest',
+      });
+
+      assert.ok(instruction.includes('Active AI Provider: Ollama Local (model: llama3.2:latest)'));
+      assert.ok(instruction.includes('Never claim or state that Google Gemini is active'));
+      assert.ok(instruction.includes('running locally on the user\'s computer via Ollama'));
+    });
+
+    it('buildSystemInstruction for Ollama with custom model should reflect custom model', () => {
+      const instruction = buildSystemInstruction({
+        activeProvider: 'ollama',
+        activeModel: 'qwen2.5:7b',
+      });
+
+      assert.ok(instruction.includes('Active AI Provider: Ollama Local (model: qwen2.5:7b)'));
+      assert.ok(instruction.includes('Never claim or state that Google Gemini is active'));
+    });
+
+    it('buildSystemInstruction for Gemini should acknowledge optional cloud operation and Ollama-first design', () => {
+      const instruction = buildSystemInstruction({
+        activeProvider: 'gemini',
+        activeModel: 'gemini-2.5-flash',
+        isFallback: false,
+      });
+
+      assert.ok(instruction.includes('Active AI Provider: Google Gemini API (model: gemini-2.5-flash)'));
+      assert.ok(instruction.includes('operating per explicit user provider selection'));
+      assert.ok(instruction.includes('designed as an Ollama-first local AI assistant'));
+    });
+
+    it('buildSystemInstruction for Gemini fallback should explicitly explain fallback state', () => {
+      const instruction = buildSystemInstruction({
+        activeProvider: 'gemini',
+        activeModel: 'gemini-1.5-flash',
+        isFallback: true,
+      });
+
+      assert.ok(instruction.includes('Active AI Provider: Google Gemini API (model: gemini-1.5-flash)'));
+      assert.ok(instruction.includes('operating as an explicit fallback because Ollama Local was unavailable'));
+    });
+
+    it('should strictly prohibit claiming desktop automation is available when Desktop Agent is not connected', () => {
+      const instruction = buildSystemInstruction({
+        activeProvider: 'ollama',
+        activeModel: 'llama3.2:latest',
+      });
+
+      assert.ok(instruction.includes('Electron Desktop Agent'));
+      assert.ok(instruction.includes('require the Electron Desktop Agent') || instruction.includes('requires the Electron Desktop Agent'));
+      assert.ok(instruction.includes('Currently, the Desktop Agent is NOT connected'));
+      assert.ok(instruction.includes('Never claim, pretend, or simulate that desktop automation or computer control is active or available when the Desktop Agent is not connected'));
+      assert.ok(instruction.includes('Do NOT pretend, claim, or simulate that you have direct access to the user\'s local operating system'));
     });
   });
 });

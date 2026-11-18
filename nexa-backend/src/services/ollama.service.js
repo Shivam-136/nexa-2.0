@@ -328,10 +328,16 @@ export async function generateOllamaReply({
   // 3. Resolve system instruction
   let activeSystemInstruction = systemInstruction;
   if (activeSystemInstruction === undefined) {
-    const activeUserContext =
+    const resolvedUserContext =
       userContext ||
       (sessionId ? getSessionUserContext(sessionId) : null) ||
       DEFAULT_USER_CONTEXT;
+    const activeUserContext = {
+      ...resolvedUserContext,
+      activeProvider: resolvedUserContext.activeProvider || 'ollama',
+      activeModel: resolvedUserContext.activeModel || selectedModel || 'llama3.2:latest',
+      isFallback: Boolean(resolvedUserContext.isFallback),
+    };
     activeSystemInstruction = buildSystemInstruction(activeUserContext, memories);
   }
 

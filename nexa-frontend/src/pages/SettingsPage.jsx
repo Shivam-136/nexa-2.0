@@ -1024,12 +1024,12 @@ export default function SettingsPage() {
               </span>
             </h4>
             <p className="text-slate-400 mt-1">
-              AI-Powered Personal Computer Operator &bull; Google Gemini Brain Integrated
+              AI-Powered Personal Computer Operator &bull; Ollama-First AI Engine
             </p>
           </div>
 
           <div className="text-slate-500 font-mono text-[11px]">
-            Node Express + Google Gen AI SDK &bull; Phase 4 AI Brain Active
+            Node Express + Ollama Local Core &bull; Optional Gemini Cloud Fallback
           </div>
         </div>
       </form>

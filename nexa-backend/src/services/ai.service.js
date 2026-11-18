@@ -13,20 +13,25 @@ export const DEFAULT_USER_CONTEXT = Object.freeze({
   technology: {
     frontend: 'React + Vite',
     backend: 'Node.js + Express',
-    ai: 'Google Gemini API',
-    voice: 'Browser SpeechRecognition and SpeechSynthesis',
-    desktopAgent: 'Planned future phase',
+    ai: 'Ollama Local (Primary: llama3.2:latest), Google Gemini API (Optional Fallback)',
+    primaryAi: 'Ollama Local',
+    defaultModel: 'llama3.2:latest',
+    fallbackAi: 'Google Gemini API',
+    database: 'MongoDB + Mongoose',
+    voice: 'Browser Web Speech API (SpeechRecognition and SpeechSynthesis)',
+    desktopAgent: 'Electron Desktop Agent for local desktop automation (planned future phase, currently not connected)',
   },
   implementedCapabilities: [
-    'Conversational AI brain powered by Google Gemini API',
+    'Conversational AI brain powered primarily by Ollama Local inference, with optional Google Gemini cloud fallback',
     'Bilingual/Multilingual speech recognition in English and Hindi via Web Speech API',
     'Voice synthesis (TTS) playback with voice and pitch controls',
     'Multi-turn conversational dialogue and history tracking',
     'System health monitoring, telemetry, and rate-limiting',
     'Reactive dashboard with animated AI Orb and waveform visualization',
+    'Persistent long-term memory system across sessions with Remember and Forget directives',
   ],
   plannedFuturePhases: [
-    'Autonomous desktop agent and computer control (planned future phase, not implemented)',
+    'Electron Desktop Agent for autonomous desktop control and computer automation (planned future phase, requires running Desktop Agent)',
   ],
 });
 
@@ -88,15 +93,42 @@ export function buildSystemInstruction(userContext = DEFAULT_USER_CONTEXT, memor
     userContext?.projectDescription ||
     'an AI-powered personal computer operator being developed by Shivam';
   const developer = userContext?.developer || userName;
+  const activeProvider = (userContext?.activeProvider || 'ollama').toLowerCase();
+  const activeModel =
+    userContext?.activeModel ||
+    (activeProvider === 'ollama' ? 'llama3.2:latest' : 'gemini-2.5-flash');
+  const isFallback = Boolean(userContext?.isFallback);
+
+  let providerSection = '';
+  if (activeProvider === 'ollama') {
+    providerSection = `
+   - Active AI Provider: Ollama Local (model: ${activeModel}).
+   - You are running locally on the user's computer via Ollama with full privacy and zero cloud dependence.
+   - CRITICAL OPERATIONAL RULE: Never claim or state that Google Gemini is active, generating this response, or powering the system when Ollama is running. You are powered by local Ollama inference.`;
+  } else if (activeProvider === 'gemini') {
+    providerSection = `
+   - Active AI Provider: Google Gemini API (model: ${activeModel})${
+     isFallback
+       ? ' (operating as an explicit fallback because Ollama Local was unavailable and the user enabled Gemini fallback)'
+       : ' (operating per explicit user provider selection)'
+   }.
+   - Even when running on Gemini, understand that NEXA 2.0 is designed as an Ollama-first local AI assistant, with Gemini serving as the optional cloud provider.`;
+  } else {
+    providerSection = `
+   - Active AI Provider: ${activeProvider} (model: ${activeModel}).`;
+  }
 
   let instruction = `You are NEXA, an intelligent, friendly, and conversational AI personal computer operator assistant built for ${projectName}.
 
 OPERATIONAL GUIDELINES & PERSONALITY:
 
 1. Identity:
-   - Your name is NEXA.
+   - Your name is NEXA (specifically NEXA 2.0).
+   - Creator: ${developer}.
+   - Purpose: An AI-powered personal computer operator being developed by ${developer}.
    - You speak with clarity, confidence, warmth, and professionalism.
-   - When asked who you are or your name, introduce yourself clearly as NEXA.
+   - When asked who you are or your name, introduce yourself clearly as NEXA 2.0 (or NEXA).
+   - Accurately identify your active AI provider:${providerSection}
 
 2. User Awareness & Relationship:
    - The user's name is ${userName}.
@@ -114,22 +146,24 @@ OPERATIONAL GUIDELINES & PERSONALITY:
    - Technology Stack:
      * Frontend: React + Vite (modern web dashboard, interactive AI Orb, waveform audio visualizer)
      * Backend: Node.js + Express (RESTful API service, rate-limiting, error normalization)
-     * AI Brain: Google Gemini API (official @google/genai SDK, multi-turn reasoning)
+     * Primary AI Provider: Ollama Local (default model: llama3.2:latest, local loopback inference with zero cloud dependency)
+     * Optional Cloud Provider: Google Gemini API (official @google/genai SDK, used only when explicitly selected or configured as fallback by user)
      * Database: MongoDB + Mongoose (persistent long-term user memories and conversation history)
      * Voice System: Browser Web Speech API (SpeechRecognition for voice input and SpeechSynthesis for text-to-speech)
-     * Desktop Agent: Planned future phase (currently NOT implemented)
+     * Desktop Agent: Planned future phase (Electron Desktop Agent for local desktop automation; currently NOT connected)
    - Current Implemented Capabilities:
-     * Conversational reasoning and intelligent question-answering powered by Google Gemini API.
-     * Persistent long-term memory system across sessions with Remember and Forget directives.
+     * Conversational reasoning and intelligent question-answering powered primarily by Ollama Local inference, with optional Google Gemini cloud fallback.
+     * Persistent long-term memory system across sessions with Remember and Forget directives stored in MongoDB.
      * Multi-turn conversational dialogue and history tracking.
      * Multilingual speech recognition in English and Hindi via browser SpeechRecognition.
      * Natural voice synthesis (TTS) via browser SpeechSynthesis with customizable voices and pitch.
      * Real-time backend health monitoring, database telemetry, and rate limiting.
 
 5. Honest Capabilities & Desktop Automation Boundaries:
-   - Desktop control and operating system automation (such as clicking mouse buttons, typing keystrokes, launching local applications, manipulating windows, modifying files, or running OS terminal commands on the host machine) are in a PLANNED FUTURE PHASE and are NOT currently implemented.
-   - Do NOT pretend, claim, or simulate that you have direct access to the user's local operating system, private files, or desktop automation.
-   - If asked to perform desktop tasks or automate computer actions, explain honestly and politely that desktop control is a planned future phase and currently only conversational reasoning and voice capabilities are implemented.
+   - Desktop control and operating system automation (such as clicking mouse buttons, typing keystrokes, launching local applications, manipulating windows, modifying files, or running OS terminal commands on the host machine) are in a PLANNED FUTURE PHASE, require the Electron Desktop Agent, and are NOT currently implemented without a connected Desktop Agent.
+   - Currently, the Desktop Agent is NOT connected. The Electron Desktop Agent is designed for local desktop automation, but if the Desktop Agent is not connected, desktop automation actions cannot be executed.
+   - CRITICAL OPERATIONAL RULE: Never claim, pretend, or simulate that desktop automation or computer control is active or available when the Desktop Agent is not connected. Do NOT pretend, claim, or simulate that you have direct access to the user's local operating system, private files, or desktop automation.
+   - If asked to perform desktop tasks or automate computer actions, explain honestly and politely that desktop control requires the Electron Desktop Agent (which is currently not connected), and currently only conversational reasoning and voice capabilities are implemented.
 
 6. Language Adaptability & Hinglish Support:
    - You natively understand English, Hindi (हिन्दी in Devanagari script), and Hinglish (Hindi written in Roman/Latin script).
@@ -398,14 +432,21 @@ export async function generateAiReply({
   }
 
   // Resolve user context separately from conversation history
-  const activeUserContext =
+  const resolvedUserContext =
     userContext ||
     (sessionId ? getSessionUserContext(sessionId) : null) ||
     DEFAULT_USER_CONTEXT;
 
+  const model = modelOverride || getGeminiModel();
+  const activeUserContext = {
+    ...resolvedUserContext,
+    activeProvider: resolvedUserContext.activeProvider || 'gemini',
+    activeModel: resolvedUserContext.activeModel || model,
+    isFallback: Boolean(resolvedUserContext.isFallback),
+  };
+
   const systemInstruction = buildSystemInstruction(activeUserContext, memories);
   const ai = getGeminiClient();
-  const model = modelOverride || getGeminiModel();
   const contents = formatConversationContents(conversationHistory, message);
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {

@@ -151,6 +151,9 @@ describe('NEXA 2.0 AI Provider Orchestration Suite (Milestone 2.3)', () => {
       assert.equal(passedParams.sessionId, 'session_123');
       assert.equal(passedParams.conversationHistory.length, 1);
       assert.equal(passedParams.memories.length, 1);
+      assert.equal(passedParams.userContext.activeProvider, 'ollama');
+      assert.equal(passedParams.userContext.activeModel, 'llama3.2');
+      assert.equal(passedParams.userContext.isFallback, false);
     });
 
     it('should respect authenticated user custom ollamaModel (e.g. qwen2.5, mistral)', async () => {
@@ -202,9 +205,11 @@ describe('NEXA 2.0 AI Provider Orchestration Suite (Milestone 2.3)', () => {
     it('should route to Gemini ONLY when explicitly selected', async () => {
       let calledGemini = false;
       let calledOllama = false;
+      let passedGeminiParams = null;
 
       const mockGemini = async (params) => {
         calledGemini = true;
+        passedGeminiParams = params;
         return { reply: 'Hello from Google Gemini Cloud!', model: 'gemini-2.5-flash' };
       };
 
@@ -228,6 +233,8 @@ describe('NEXA 2.0 AI Provider Orchestration Suite (Milestone 2.3)', () => {
       assert.equal(result.provider, 'gemini');
       assert.equal(result.model, 'gemini-2.5-flash');
       assert.equal(result.fallbackUsed, false);
+      assert.equal(passedGeminiParams.userContext.activeProvider, 'gemini');
+      assert.equal(passedGeminiParams.userContext.isFallback, false);
     });
 
     it('should NEVER silently switch from Gemini to Ollama if Gemini fails', async () => {
@@ -412,6 +419,8 @@ describe('NEXA 2.0 AI Provider Orchestration Suite (Milestone 2.3)', () => {
       assert.equal(passedGeminiParams.conversationHistory.length, 1);
       assert.equal(passedGeminiParams.sessionId, 'session_fb');
       assert.equal(passedGeminiParams.memories.length, 1);
+      assert.equal(passedGeminiParams.userContext.activeProvider, 'gemini');
+      assert.equal(passedGeminiParams.userContext.isFallback, true);
     });
 
     it('should NOT fall back to Gemini if Gemini is not configured, returning clear Ollama error', async () => {

@@ -90,15 +90,23 @@ export async function routeChatRequest({
   const generateOllama = _deps.generateOllamaReply || generateOllamaReply;
   const checkGeminiConfig = _deps.isGeminiConfigured || isGeminiConfigured;
   const getModelOllama = _deps.getOllamaModel || getOllamaModel;
+  const getModelGemini = _deps.getGeminiModel || getGeminiModel;
 
   const provider = resolveProvider(user);
 
   // 1. Explicit Gemini routing
   if (provider === 'gemini') {
+    const activeGeminiModel = getModelGemini();
+    const geminiContext = {
+      ...(userContext || {}),
+      activeProvider: 'gemini',
+      activeModel: activeGeminiModel,
+      isFallback: false,
+    };
     const result = await generateAi({
       message,
       conversationHistory,
-      userContext,
+      userContext: geminiContext,
       sessionId,
       memories,
       timeoutMs,
@@ -117,10 +125,16 @@ export async function routeChatRequest({
   const allowFallback = Boolean(user?.geminiFallback);
 
   try {
+    const ollamaContext = {
+      ...(userContext || {}),
+      activeProvider: 'ollama',
+      activeModel: ollamaModel,
+      isFallback: false,
+    };
     const result = await generateOllama({
       message,
       conversationHistory,
-      userContext,
+      userContext: ollamaContext,
       sessionId,
       memories,
       model: ollamaModel,
@@ -164,10 +178,17 @@ export async function routeChatRequest({
     );
 
     try {
+      const activeGeminiModel = getModelGemini();
+      const fallbackContext = {
+        ...(userContext || {}),
+        activeProvider: 'gemini',
+        activeModel: activeGeminiModel,
+        isFallback: true,
+      };
       const geminiResult = await generateAi({
         message,
         conversationHistory,
-        userContext,
+        userContext: fallbackContext,
         sessionId,
         memories,
         timeoutMs,
