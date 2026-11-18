@@ -95,7 +95,9 @@ export async function sendChatMessage({
       success: true,
       reply: data.reply,
       conversationId: data.conversationId || conversationId,
-      model: data.model || 'Gemini',
+      provider: data.provider || (data.model?.toLowerCase().includes('gemini') ? 'gemini' : 'ollama'),
+      model: data.model || 'llama3.2',
+      fallbackUsed: Boolean(data.fallbackUsed),
       memoryAction: data.memoryAction,
       memoriesUsed: data.memoriesUsed,
       memory: data.memory,
@@ -183,9 +185,62 @@ export async function getAiBrainStatus() {
   }
 }
 
+/**
+ * Queries the backend to check Ollama service connectivity and available models.
+ *
+ * @param {Object} [options={}]
+ * @param {string} [options.baseUrl] - Optional custom loopback URL to test
+ * @returns {Promise<{ isConnected: boolean, status: string, baseUrl?: string, models: string[], error?: string }>}
+ */
+export async function checkOllamaStatus({ baseUrl } = {}) {
+  const token = typeof getAccessToken === 'function' ? getAccessToken() : null;
+  const queryParam = baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : '';
+  const endpoint = `${BASE_URL}/chat/ollama/status${queryParam}`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        isConnected: false,
+        status: 'error',
+        baseUrl,
+        models: [],
+        error: data.error || `Ollama status check failed with HTTP ${response.status}`,
+      };
+    }
+
+    return {
+      isConnected: Boolean(data.isConnected),
+      status: data.status || (data.isConnected ? 'connected' : 'disconnected'),
+      baseUrl: data.baseUrl || baseUrl || 'http://127.0.0.1:11434',
+      models: Array.isArray(data.models) ? data.models : [],
+      error: data.error,
+    };
+  } catch (err) {
+    return {
+      isConnected: false,
+      status: 'disconnected',
+      baseUrl,
+      models: [],
+      error: err.message || 'Unable to connect to backend to query Ollama status.',
+    };
+  }
+}
+
 export default {
   sendChatMessage,
   checkBackendHealth,
   getAiBrainStatus,
+  checkOllamaStatus,
   prepareConversationHistory,
 };

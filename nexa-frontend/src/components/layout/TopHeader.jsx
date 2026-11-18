@@ -99,7 +99,7 @@ export default function TopHeader() {
 
         {/* AI Brain Status */}
         <div
-          title={`NEXA AI Brain: ${connectionStatus.aiBrain}`}
+          title={`NEXA AI Provider: ${user?.aiProvider ? user.aiProvider.toUpperCase() : 'OLLAMA'} • ${connectionStatus.aiBrain}`}
           className={`hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono border ${
             connectionStatus.aiBrain?.includes('Active')
               ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
@@ -107,6 +107,7 @@ export default function TopHeader() {
           }`}
         >
           <Sparkles className="h-3 w-3 text-cyan-400" />
+          <span className="text-[11px] font-semibold">{user?.aiProvider ? user.aiProvider.toUpperCase() : 'OLLAMA'}:</span>
           <span className="text-[11px]">{connectionStatus.aiBrain}</span>
         </div>
 

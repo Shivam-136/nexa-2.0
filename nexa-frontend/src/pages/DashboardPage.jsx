@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Terminal, Bot, User, Sparkles, RotateCcw, AlertTriangle, Volume2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { ASSISTANT_STATES } from '../utils/constants';
 import AiOrb from '../components/chat/AiOrb';
 import WaveformVisualizer from '../components/chat/WaveformVisualizer';
@@ -20,6 +21,10 @@ export default function DashboardPage() {
     speak,
     voiceLanguage,
   } = useAppContext();
+
+  const { user } = useAuth();
+  const activeProvider = user?.aiProvider || 'ollama';
+  const activeModel = activeProvider === 'gemini' ? 'Gemini 1.5' : (user?.ollamaModel || 'llama3.2');
 
   const messagesEndRef = useRef(null);
   const isProcessing = assistantState === ASSISTANT_STATES.PROCESSING;
@@ -43,8 +48,8 @@ export default function DashboardPage() {
                   NEXA 2.0 Autonomous Core
                 </span>
               </div>
-              <span className="text-[11px] font-mono text-slate-500 hidden sm:inline">
-                GEMINI AI BRAIN ACTIVE
+              <span className="text-[11px] font-mono text-cyan-400 hidden sm:inline uppercase">
+                {activeProvider === 'gemini' ? 'Gemini Cloud Brain' : 'Ollama Local Brain'} ({activeModel})
               </span>
             </div>
 
@@ -54,7 +59,7 @@ export default function DashboardPage() {
                 Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-400">Operator</span>
               </h2>
               <p className="text-sm text-slate-400 mt-1 max-w-lg mx-auto">
-                Voice interaction, intelligent Gemini reasoning, and computer automation ready in active session.
+                Voice interaction, local-first AI reasoning, and computer automation ready in active session.
               </p>
             </div>
 
@@ -139,9 +144,24 @@ export default function DashboardPage() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-slate-300">
-                          {isErrorMsg ? 'System Alert' : isAssistant ? 'NEXA 2.0' : 'Operator'}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-semibold text-slate-300">
+                            {isErrorMsg ? 'System Alert' : isAssistant ? 'NEXA 2.0' : 'Operator'}
+                          </span>
+                          {isAssistant && !isErrorMsg && msg.model && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-cyan-300 border border-blue-500/20">
+                              {msg.provider ? `${msg.provider.toUpperCase()}: ` : ''}{msg.model}
+                            </span>
+                          )}
+                          {isAssistant && !isErrorMsg && msg.fallbackUsed && (
+                            <span
+                              title="Local model was unavailable; processed via Google Gemini fallback"
+                              className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1"
+                            >
+                              <span>⚠️ Fallback</span>
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center space-x-2">
                           <span className="text-[10px] text-slate-500 font-mono">
                             {msg.timestamp}

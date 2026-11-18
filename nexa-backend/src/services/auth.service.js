@@ -270,6 +270,7 @@ export async function updateUserPreferences(userId, updateData) {
     'displayName',
     'aiProvider',
     'ollamaModel',
+    'ollamaBaseUrl',
     'geminiFallback',
     'voiceLanguage',
   ];

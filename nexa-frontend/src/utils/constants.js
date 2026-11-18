@@ -59,7 +59,30 @@ export const API_ENDPOINTS = {
   DESKTOP_BRIDGE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_DESKTOP_BRIDGE_URL) || 'ws://localhost:9001/desktop',
   MEMORIES: '/memories',
   CONVERSATIONS: '/conversations',
+  OLLAMA_STATUS: '/chat/ollama/status',
 };
+
+export const DEFAULT_AI_PROVIDER = 'ollama';
+export const DEFAULT_OLLAMA_MODEL = 'llama3.2';
+export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+export const DEFAULT_GEMINI_FALLBACK = false;
+
+export const SUPPORTED_AI_PROVIDERS = [
+  {
+    id: 'ollama',
+    name: 'Ollama Local',
+    description: 'Privacy-focused on-device AI inference via local daemon. No data leaves your machine.',
+    badge: 'Local-First',
+    recommended: true,
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    description: 'High-parameter cloud reasoning brain using Google Gen AI SDK. Requires GEMINI_API_KEY in backend.',
+    badge: 'Cloud Brain',
+    recommended: false,
+  },
+];
 
 export const MEMORY_CATEGORIES = [
   'All',

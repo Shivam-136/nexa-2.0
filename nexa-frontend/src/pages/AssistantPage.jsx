@@ -19,6 +19,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import AiOrb from '../components/chat/AiOrb';
 import WaveformVisualizer from '../components/chat/WaveformVisualizer';
 import CommandInput from '../components/chat/CommandInput';
@@ -47,6 +48,10 @@ export default function AssistantPage() {
     speak,
     voiceErrorMessage,
   } = useAppContext();
+
+  const { user } = useAuth();
+  const activeProvider = user?.aiProvider || 'ollama';
+  const activeModel = activeProvider === 'gemini' ? 'Gemini 1.5' : (user?.ollamaModel || 'llama3.2');
 
   const [interactionMode, setInteractionMode] = useState('hybrid'); // 'hybrid' | 'voice' | 'text'
   const [copiedId, setCopiedId] = useState(null);
@@ -77,13 +82,13 @@ export default function AssistantPage() {
             <span className="p-1 rounded-md bg-blue-500/10 text-cyan-400 border border-blue-500/20">
               <Bot className="h-4 w-4" />
             </span>
-            <h2 className="text-base font-bold text-white">NEXA 2.0 AI Brain & Assistant Console</h2>
+            <h2 className="text-base font-bold text-white">NEXA 2.0 AI Brain &amp; Assistant Console</h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-              {connectionStatus.aiBrain.includes('Active') ? connectionStatus.aiBrain : 'Gemini Core'}
+              {activeProvider === 'gemini' ? 'Gemini Cloud Brain' : `Ollama Local (${activeModel})`}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Google Gemini Reasoning Engine &bull; Web Speech Recognition (EN/HI) &bull; Native TTS Playback
+            {activeProvider === 'gemini' ? 'Google Gemini Cloud Brain' : 'Ollama Local-First Inference Engine'} &bull; Web Speech Recognition (EN/HI) &bull; Native TTS Playback
           </p>
         </div>
 
@@ -241,7 +246,7 @@ export default function AssistantPage() {
           <div className="flex items-center space-x-2">
             <Terminal className="h-4 w-4 text-cyan-400" />
             <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
-              Dialogue Transcript &bull; Gemini Intelligence Stream
+              Dialogue Transcript &bull; Reasoning Feed
             </h3>
           </div>
 
@@ -315,9 +320,17 @@ export default function AssistantPage() {
                       <span className="font-semibold text-slate-200">
                         {isErrorMsg ? 'System Alert' : isAssistant ? 'NEXA 2.0' : 'Operator'}
                       </span>
-                      {msg.model && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60">
-                          {msg.model}
+                      {isAssistant && msg.model && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-cyan-300 border border-blue-500/20">
+                          {msg.provider ? `${msg.provider.toUpperCase()}: ` : ''}{msg.model}
+                        </span>
+                      )}
+                      {isAssistant && msg.fallbackUsed && (
+                        <span
+                          title="Local Ollama model was unavailable; processed via Google Gemini fallback"
+                          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1"
+                        >
+                          <span>⚠️ Gemini Fallback</span>
                         </span>
                       )}
                     </div>

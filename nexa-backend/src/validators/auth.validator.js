@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validateOllamaBaseUrl } from '../config/ollama.js';
 
 export const registerSchema = z.object({
   email: z
@@ -43,7 +44,27 @@ export const updatePreferencesSchema = z.object({
   ollamaModel: z
     .string()
     .trim()
+    .min(1, 'Ollama model name cannot be empty')
     .max(100, 'Ollama model name must be under 100 characters')
+    .optional(),
+  ollamaBaseUrl: z
+    .string()
+    .trim()
+    .max(255, 'Ollama base URL must be under 255 characters')
+    .refine(
+      (url) => {
+        try {
+          validateOllamaBaseUrl(url);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          'Invalid or unsafe Ollama base URL. Only local loopback endpoints (e.g. http://127.0.0.1:11434, localhost, ::1) are permitted.',
+      }
+    )
     .optional(),
   geminiFallback: z.boolean().optional(),
   voiceLanguage: z

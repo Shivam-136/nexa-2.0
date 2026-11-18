@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../common/StatusBadge';
 
 export default function ActivityPanel() {
@@ -23,16 +24,20 @@ export default function ActivityPanel() {
     addToast,
   } = useAppContext();
 
+  const { user } = useAuth();
+  const activeProvider = user?.aiProvider || 'ollama';
+
   const handleRetryBridge = async () => {
     const health = await refreshBackendStatus();
     addToast(
       'Telemetry Refreshed',
-      `Backend: ${health.isOnline ? 'Online' : 'Offline'} • Brain: ${health.model}`,
+      `Backend: ${health.isOnline ? 'Online' : 'Offline'} • Ollama: ${health.ollama?.isConnected ? 'Online' : 'Offline'} • Brain: ${health.model}`,
       health.isOnline ? 'info' : 'warning'
     );
   };
 
   const isBrainActive = connectionStatus.aiBrain?.includes('Active');
+  const isOllamaConnected = connectionStatus.ollama?.includes('Connected');
 
   return (
     <div className="w-full flex flex-col space-y-4">
@@ -47,11 +52,42 @@ export default function ActivityPanel() {
           </div>
           <button
             onClick={handleRetryBridge}
-            className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
-            title="Refresh Daemon Status"
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors cursor-pointer"
+            title="Refresh Subsystems Telemetry"
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
+        </div>
+
+        {/* Ollama Local Engine Status */}
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className={`p-2 rounded-lg border ${
+              isOllamaConnected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-slate-900 text-slate-400 border-slate-800'
+            }`}>
+              <Cpu className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-1.5">
+                <p className="text-xs font-semibold text-slate-200">Ollama Local Engine</p>
+                {activeProvider === 'ollama' && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-cyan-500/20 text-cyan-300">
+                    PRIMARY
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500 font-mono">
+                {connectionStatus.ollama || 'Port 11434'}
+              </p>
+            </div>
+          </div>
+          <StatusBadge
+            status={isOllamaConnected ? 'ready' : 'disconnected'}
+            label={isOllamaConnected ? 'Online' : 'Offline'}
+            size="xs"
+          />
         </div>
 
         {/* Gemini AI Brain Status */}
@@ -61,13 +97,20 @@ export default function ActivityPanel() {
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-xs font-semibold text-slate-200">Gemini AI Brain</p>
+              <div className="flex items-center space-x-1.5">
+                <p className="text-xs font-semibold text-slate-200">Gemini Cloud Brain</p>
+                {activeProvider === 'gemini' && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-cyan-500/20 text-cyan-300">
+                    PRIMARY
+                  </span>
+                )}
+              </div>
               <p className="text-[10px] text-slate-500 font-mono">{connectionStatus.aiBrain}</p>
             </div>
           </div>
           <StatusBadge
             status={isBrainActive ? 'ready' : connectionStatus.backend === 'Connected' ? 'warning' : 'not-connected'}
-            label={isBrainActive ? 'Active' : connectionStatus.backend === 'Connected' ? 'No Key' : 'Offline'}
+            label={isBrainActive ? 'Ready' : connectionStatus.backend === 'Connected' ? 'No Key' : 'Offline'}
             size="xs"
           />
         </div>

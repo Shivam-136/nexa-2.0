@@ -3,7 +3,7 @@ import { APP_CONFIG, ASSISTANT_STATES } from '../utils/constants';
 import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { checkMicrophonePermission } from '../services/voice.service';
-import { sendChatMessage, checkBackendHealth } from '../services/chat.service';
+import { sendChatMessage, checkBackendHealth, checkOllamaStatus } from '../services/chat.service';
 
 const AppContext = createContext(null);
 
@@ -23,6 +23,7 @@ export function AppProvider({ children }) {
     core: 'Ready',
     backend: 'Checking...',
     aiBrain: 'Checking...',
+    ollama: 'Checking...',
     database: 'Checking...',
     desktopAgent: 'Not Connected',
     browserAutomation: 'Standby',
@@ -73,9 +74,16 @@ export function AppProvider({ children }) {
     assistantStateRef.current = assistantState;
   }, [assistantState]);
 
-  // Backend, AI Brain & Database Health Check
+  // Backend, AI Brain, Ollama & Database Health Check
   const refreshBackendStatus = useCallback(async () => {
     const health = await checkBackendHealth();
+    let ollamaStatus = { isConnected: false, status: 'disconnected', models: [] };
+    try {
+      ollamaStatus = await checkOllamaStatus();
+    } catch {
+      // safe fallback if unauthenticated or offline
+    }
+
     const dbRaw = health.details?.database?.status;
     const dbFormatted =
       dbRaw === 'connected' ? 'Connected' : dbRaw === 'disconnected' ? 'Disconnected' : dbRaw || (health.isOnline ? 'Online' : 'Offline');
@@ -84,13 +92,18 @@ export function AppProvider({ children }) {
       ...prev,
       backend: health.isOnline ? 'Connected' : 'Disconnected',
       aiBrain: health.isOnline
-        ? health.geminiConfigured
-          ? `Active (${health.model})`
-          : 'Missing API Key'
+        ? ollamaStatus.isConnected
+          ? `Ollama Active (${ollamaStatus.models?.[0] || 'llama3.2'})`
+          : health.geminiConfigured
+          ? `Gemini Active (${health.model})`
+          : 'Offline'
         : 'Offline',
+      ollama: ollamaStatus.isConnected
+        ? `Connected (${ollamaStatus.models?.length || 0} models)`
+        : 'Disconnected',
       database: health.isOnline ? dbFormatted : 'Offline',
     }));
-    return health;
+    return { ...health, ollama: ollamaStatus };
   }, []);
 
   useEffect(() => {
@@ -333,7 +346,7 @@ export function AppProvider({ children }) {
         {
           id: activityId,
           title: `Prompt: "${trimmed.length > 32 ? trimmed.substring(0, 32) + '...' : trimmed}"`,
-          description: 'Consulting NEXA AI Brain (Gemini)...',
+          description: 'Consulting NEXA AI Brain...',
           time: 'Just now',
           type: 'query',
           status: 'processing',
@@ -341,7 +354,7 @@ export function AppProvider({ children }) {
         ...prev.slice(0, 7),
       ]);
 
-      // 3. Send message to backend and 4. Receive Gemini response
+      // 3. Send message to backend and 4. Receive AI response
       try {
         const historySnapshot = [...messagesRef.current];
         const result = await sendChatMessage({
@@ -355,22 +368,33 @@ export function AppProvider({ children }) {
           conversationIdRef.current = result.conversationId;
         }
 
-        // 5. Display assistant response
+        // 5. Display assistant response with provider & fallback telemetry
         const assistantMsg = {
           id: `ast-${Date.now()}`,
           sender: 'assistant',
           text: result.reply,
+          provider: result.provider,
           model: result.model,
+          fallbackUsed: Boolean(result.fallbackUsed),
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
 
         setMessages((prev) => [...prev, assistantMsg]);
 
+        // Explicit fallback notification: never silently enable Gemini fallback
+        if (result.fallbackUsed) {
+          addToast(
+            'Gemini Fallback Activated',
+            `Local Ollama was unavailable. Prompt was processed using Google Gemini fallback per your preferences.`,
+            'warning'
+          );
+        }
+
         // Update telemetry state
         setConnectionStatus((prev) => ({
           ...prev,
           backend: 'Connected',
-          aiBrain: `Active (${result.model})`,
+          aiBrain: `Active (${result.provider?.toUpperCase() || 'AI'}: ${result.model})`,
         }));
 
         if (result.memoryAction === 'remembered') {
@@ -382,7 +406,11 @@ export function AppProvider({ children }) {
         setRecentActivity((prev) =>
           prev.map((act) =>
             act.id === activityId
-              ? { ...act, status: 'completed', description: `Replied by ${result.model}` }
+              ? {
+                  ...act,
+                  status: 'completed',
+                  description: `Replied by ${result.provider?.toUpperCase() || 'AI'} (${result.model})${result.fallbackUsed ? ' [Fallback]' : ''}`,
+                }
               : act
           )
         );

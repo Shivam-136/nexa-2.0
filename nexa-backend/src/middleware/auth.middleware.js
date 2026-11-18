@@ -61,9 +61,10 @@ export async function requireAuth(req, res, next) {
         id: user._id.toString(),
         email: user.email,
         displayName: user.displayName || user.email.split('@')[0],
-        aiProvider: user.aiProvider || 'gemini',
-        ollamaModel: user.ollamaModel || 'llama3',
-        geminiFallback: user.geminiFallback ?? true,
+        aiProvider: user.aiProvider || 'ollama',
+        ollamaModel: user.ollamaModel || 'llama3.2',
+        ollamaBaseUrl: user.ollamaBaseUrl || 'http://127.0.0.1:11434',
+        geminiFallback: user.geminiFallback ?? false,
         voiceLanguage: user.voiceLanguage || 'en-US',
       };
     } else {
@@ -72,9 +73,10 @@ export async function requireAuth(req, res, next) {
         id: payload.userId,
         email: payload.email,
         displayName: payload.displayName || payload.email?.split('@')[0] || 'Operator',
-        aiProvider: 'gemini',
-        ollamaModel: 'llama3',
-        geminiFallback: true,
+        aiProvider: 'ollama',
+        ollamaModel: 'llama3.2',
+        ollamaBaseUrl: 'http://127.0.0.1:11434',
+        geminiFallback: false,
         voiceLanguage: 'en-US',
       };
     }
@@ -105,9 +107,10 @@ export async function optionalAuth(req, res, next) {
                   id: user._id.toString(),
                   email: user.email,
                   displayName: user.displayName || user.email.split('@')[0],
-                  aiProvider: user.aiProvider || 'gemini',
-                  ollamaModel: user.ollamaModel || 'llama3',
-                  geminiFallback: user.geminiFallback ?? true,
+                  aiProvider: user.aiProvider || 'ollama',
+                  ollamaModel: user.ollamaModel || 'llama3.2',
+                  ollamaBaseUrl: user.ollamaBaseUrl || 'http://127.0.0.1:11434',
+                  geminiFallback: user.geminiFallback ?? false,
                   voiceLanguage: user.voiceLanguage || 'en-US',
                 };
               }

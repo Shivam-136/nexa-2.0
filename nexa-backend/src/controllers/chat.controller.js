@@ -1,10 +1,12 @@
 import {
-  generateAiReply,
   DEFAULT_USER_CONTEXT,
   getSessionUserContext,
   setSessionUserContext,
 } from '../services/ai.service.js';
 import { isGeminiConfigured, getGeminiModel } from '../config/gemini.js';
+import { validateOllamaBaseUrl } from '../config/ollama.js';
+import { routeChatRequest } from '../services/aiProvider.service.js';
+import { checkOllamaStatus, fetchAvailableModels } from '../services/ollama.service.js';
 import {
   detectMemoryIntent,
   saveMemory,
@@ -106,8 +108,8 @@ export async function handleChatMessage(req, res, next) {
     }
 
     // Derive user identity strictly from verified authentication middleware when available.
-    // Never trust frontend-supplied ownership IDs.
-    const effectiveUserId = req.user?.id ? req.user.id.toString() : (req.userId || userId);
+    // Never trust frontend-supplied ownership IDs or provider parameters in the request body.
+    const effectiveUserId = req.user?.id ? req.user.id.toString() : (req.userId || 'shivam');
 
     // Dynamic user context reflecting authenticated user
     const effectiveUserContext = sanitizedUserContext || (req.user ? {
@@ -206,8 +208,9 @@ export async function handleChatMessage(req, res, next) {
       console.warn('[Memory Retrieval Warning]:', retrieveErr.message);
     }
 
-    // 3. Generate reply via Gemini with injected long-term memories
-    const { reply, model } = await generateAiReply({
+    // 3. Dispatch chat reasoning to user's selected provider via Provider Orchestrator
+    const { reply, provider, model, fallbackUsed } = await routeChatRequest({
+      user: req.user,
       message: sanitizedMessage,
       conversationHistory: sanitizedHistory,
       userContext: effectiveUserContext,
@@ -230,7 +233,9 @@ export async function handleChatMessage(req, res, next) {
       success: true,
       reply,
       conversationId,
+      provider,
       model,
+      fallbackUsed,
       memoriesUsed: relevantMemories.length,
       timestamp: new Date().toISOString(),
     });
@@ -248,8 +253,63 @@ export function getChatStatus(req, res) {
     status: configured ? 'ready' : 'unconfigured',
     model: getGeminiModel(),
     geminiConfigured: configured,
+    defaultProvider: 'ollama',
     message: configured
       ? 'Gemini AI Brain is active and ready to process requests.'
       : 'Gemini API key is not configured on the backend.',
   });
+}
+
+/**
+ * Handler for GET /api/v1/chat/ollama/status
+ * Authenticated endpoint to check Ollama connection and list installed models.
+ * Strictly respects loopback boundary and never exposes Ollama outside loopback.
+ */
+export async function getOllamaConnectionStatus(req, res, next) {
+  try {
+    const rawUrl = req.query?.baseUrl || req.user?.ollamaBaseUrl;
+    let validatedBaseUrl;
+    if (rawUrl) {
+      try {
+        validatedBaseUrl = validateOllamaBaseUrl(rawUrl);
+      } catch (validationErr) {
+        return res.status(400).json({
+          success: false,
+          isConnected: false,
+          status: 'error',
+          error: validationErr.message,
+        });
+      }
+    }
+
+    const statusResult = await checkOllamaStatus({
+      baseUrl: validatedBaseUrl,
+      timeoutMs: 5000,
+    });
+
+    let models = [];
+    if (statusResult.isConnected) {
+      try {
+        const modelDescriptors = await fetchAvailableModels({
+          baseUrl: validatedBaseUrl,
+          timeoutMs: 5000,
+        });
+        models = modelDescriptors.map((m) => (typeof m === 'object' && m.name ? m.name : m));
+      } catch {
+        models = statusResult.models || [];
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      isConnected: Boolean(statusResult.isConnected),
+      status: statusResult.status,
+      baseUrl: statusResult.baseUrl || validatedBaseUrl || 'http://127.0.0.1:11434',
+      models,
+      error: statusResult.error,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
 }

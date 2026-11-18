@@ -5,6 +5,7 @@ import {
   sendChatMessage,
   checkBackendHealth,
   getAiBrainStatus,
+  checkOllamaStatus,
 } from '../services/chat.service.js';
 
 describe('NEXA 2.0 Frontend Chat Service Test Suite', () => {
@@ -73,7 +74,9 @@ describe('NEXA 2.0 Frontend Chat Service Test Suite', () => {
             success: true,
             reply: 'Hello Operator! How can I assist you?',
             conversationId: 'conv-test-123',
-            model: 'gemini-2.5-flash',
+            provider: 'ollama',
+            model: 'llama3.2',
+            fallbackUsed: false,
           }),
         };
       };
@@ -85,8 +88,35 @@ describe('NEXA 2.0 Frontend Chat Service Test Suite', () => {
 
       assert.equal(result.success, true);
       assert.equal(result.reply, 'Hello Operator! How can I assist you?');
-      assert.equal(result.model, 'gemini-2.5-flash');
+      assert.equal(result.provider, 'ollama');
+      assert.equal(result.model, 'llama3.2');
+      assert.equal(result.fallbackUsed, false);
       assert.equal(result.conversationId, 'conv-test-123');
+    });
+
+    it('should preserve fallbackUsed true and provider metadata when Gemini fallback occurred', async () => {
+      globalThis.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          reply: 'Response generated via cloud fallback.',
+          conversationId: 'conv-fallback-456',
+          provider: 'gemini',
+          model: 'gemini-1.5-flash',
+          fallbackUsed: true,
+        }),
+      });
+
+      const result = await sendChatMessage({
+        message: 'Compute complex task',
+        conversationId: 'conv-fallback-456',
+      });
+
+      assert.equal(result.success, true);
+      assert.equal(result.provider, 'gemini');
+      assert.equal(result.model, 'gemini-1.5-flash');
+      assert.equal(result.fallbackUsed, true);
     });
 
     it('should throw descriptive error on backend 400 or 500 response', async () => {
@@ -160,6 +190,81 @@ describe('NEXA 2.0 Frontend Chat Service Test Suite', () => {
       assert.equal(health.isOnline, false);
       assert.equal(health.geminiConfigured, false);
       assert.equal(health.model, 'unknown');
+    });
+  });
+
+  describe('4. checkOllamaStatus Service Method', () => {
+    it('should query /chat/ollama/status and return connection telemetry and models', async () => {
+      globalThis.fetch = async (url) => {
+        assert.ok(url.includes('/chat/ollama/status'));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isConnected: true,
+            status: 'connected',
+            baseUrl: 'http://127.0.0.1:11434',
+            models: ['llama3.2:latest', 'mistral:latest'],
+          }),
+        };
+      };
+
+      const status = await checkOllamaStatus();
+      assert.equal(status.isConnected, true);
+      assert.equal(status.status, 'connected');
+      assert.equal(status.baseUrl, 'http://127.0.0.1:11434');
+      assert.deepEqual(status.models, ['llama3.2:latest', 'mistral:latest']);
+    });
+
+    it('should append custom baseUrl as encoded query parameter', async () => {
+      globalThis.fetch = async (url) => {
+        assert.ok(url.includes('baseUrl=http%3A%2F%2Flocalhost%3A11434'));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isConnected: true,
+            status: 'connected',
+            baseUrl: 'http://localhost:11434',
+            models: ['qwen2.5:latest'],
+          }),
+        };
+      };
+
+      const status = await checkOllamaStatus({ baseUrl: 'http://localhost:11434' });
+      assert.equal(status.isConnected, true);
+      assert.equal(status.baseUrl, 'http://localhost:11434');
+    });
+
+    it('should safely return disconnected when backend returns non-ok status', async () => {
+      globalThis.fetch = async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          success: false,
+          isConnected: false,
+          status: 'disconnected',
+          error: 'Ollama daemon is offline',
+        }),
+      });
+
+      const status = await checkOllamaStatus();
+      assert.equal(status.isConnected, false);
+      assert.equal(status.status, 'error');
+      assert.ok(status.error.includes('Ollama daemon is offline'));
+    });
+
+    it('should catch fetch exceptions and return disconnected without throwing', async () => {
+      globalThis.fetch = async () => {
+        throw new Error('Network timeout');
+      };
+
+      const status = await checkOllamaStatus();
+      assert.equal(status.isConnected, false);
+      assert.equal(status.status, 'disconnected');
+      assert.ok(status.error.includes('Network timeout'));
     });
   });
 });
