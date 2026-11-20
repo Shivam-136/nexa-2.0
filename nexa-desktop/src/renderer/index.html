@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self';">
+  <title>NEXA 2.0 Desktop Agent</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Custom Draggable Frameless Titlebar -->
+    <header class="titlebar">
+      <div class="titlebar-drag-region">
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 64 64" fill="none">
+            <rect width="64" height="64" rx="14" fill="#090d16" />
+            <path d="M18 46V18L34 36V18M34 46V28L50 46V18" stroke="#38bdf8" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="brand-text">NEXA <span class="brand-version">2.0</span></span>
+          <span class="brand-pill">Desktop Agent</span>
+        </div>
+      </div>
+      <div class="window-controls">
+        <button id="btn-minimize" class="control-btn" title="Minimize">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+        </button>
+        <button id="btn-maximize" class="control-btn" title="Maximize">
+          <svg id="icon-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+        </button>
+        <button id="btn-close" class="control-btn close-btn" title="Minimize to Tray">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Agent Hero Banner -->
+      <section class="hero-section">
+        <div class="hero-header">
+          <div class="agent-avatar-ring">
+            <div class="agent-core-pulse"></div>
+            <svg class="agent-emblem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="hero-title">NEXA Desktop Agent Core</h1>
+            <p class="hero-subtitle">Phase 6 — Milestone 3.1: Foundational Windows Agent</p>
+          </div>
+          <div class="status-badge" id="agent-status-badge">
+            <span class="status-indicator"></span>
+            <span id="agent-status-text">ONLINE (Tray Daemon Active)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Architecture & Security Badges Grid -->
+      <section class="grid-section">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-icon cyan">🔒</span>
+            <span class="card-title">Context Isolation</span>
+          </div>
+          <div class="card-value active">ENABLED</div>
+          <div class="card-desc">Zero renderer access to Node internals; contextBridge enforced.</div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-icon green">🛡️</span>
+            <span class="card-title">Node Integration</span>
+          </div>
+          <div class="card-value secure">DISABLED</div>
+          <div class="card-desc">Direct require() forbidden; renderer runs in isolated sandbox.</div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-icon blue">📦</span>
+            <span class="card-title">Chromium Sandbox</span>
+          </div>
+          <div class="card-value active">ACTIVE</div>
+          <div class="card-desc">OS-level process sandbox restricting renderer privileges.</div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-icon purple">📌</span>
+            <span class="card-title">Single Instance Lock</span>
+          </div>
+          <div class="card-value active" id="single-instance-status">LOCKED</div>
+          <div class="card-desc">Unique process exclusivity; secondary instances restore primary.</div>
+        </div>
+      </section>
+
+      <!-- Telemetry & IPC Testing Split -->
+      <section class="split-section">
+        <!-- Telemetry Card -->
+        <div class="glass-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">System & Agent Telemetry</h2>
+            <button id="btn-refresh-telemetry" class="action-btn-sm">Refresh</button>
+          </div>
+          <div class="telemetry-table">
+            <div class="telemetry-row">
+              <span class="telemetry-label">Platform:</span>
+              <span class="telemetry-val" id="val-platform">Loading...</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Architecture:</span>
+              <span class="telemetry-val" id="val-arch">Loading...</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Electron Version:</span>
+              <span class="telemetry-val highlight" id="val-electron">Loading...</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Node.js Engine:</span>
+              <span class="telemetry-val" id="val-node">Loading...</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">System Tray:</span>
+              <span class="telemetry-val text-green" id="val-tray">Active (Background Daemon)</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">Agent Uptime:</span>
+              <span class="telemetry-val" id="val-uptime">0s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Validated IPC Verification Card -->
+        <div class="glass-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Validated IPC Communication</h2>
+            <span class="badge-mini">Strict Channels</span>
+          </div>
+          <p class="panel-hint">Test validated roundtrip messaging via contextBridge (no raw ipcRenderer).</p>
+          <div class="ipc-input-group">
+            <input type="text" id="ipc-ping-input" class="glass-input" placeholder="Type test message (e.g. hello-nexa)" value="nexa-agent-ping" maxlength="100">
+            <button id="btn-send-ping" class="action-btn-primary">Ping Bridge</button>
+          </div>
+          <div class="ipc-output-console" id="ipc-output-console">
+            <div class="console-line info">[Ready] Awaiting IPC command...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Actions Footer -->
+      <footer class="footer-actions">
+        <button id="btn-minimize-tray" class="action-btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
+          Minimize to System Tray
+        </button>
+        <button id="btn-quit-app" class="action-btn-danger">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+          Graceful Shutdown
+        </button>
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

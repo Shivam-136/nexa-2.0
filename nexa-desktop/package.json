@@ -1,0 +1,26 @@
+{
+  "name": "nexa-desktop",
+  "version": "2.0.0",
+  "description": "NEXA 2.0 Windows Desktop Agent - Foundational Architecture",
+  "private": true,
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test src/__tests__/*.test.js",
+    "verify:runtime": "electron scripts/verify-full-runtime.js",
+    "generate-icons": "node scripts/generate-icons.js"
+  },
+  "keywords": [
+    "nexa",
+    "desktop-agent",
+    "electron",
+    "windows",
+    "autonomous-operator"
+  ],
+  "author": "NEXA Core Team",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^24.22.3"
+  }
+}
