@@ -62,6 +62,8 @@ describe('1. IPC Channel Whitelist Enforcement', () => {
       'nexa:window-close',
       'nexa:window-is-maximized',
       'nexa:app-quit',
+      'nexa:storage-get-status',
+      'nexa:storage-get-device-info',
     ];
 
     validChannels.forEach((ch) => {
@@ -75,6 +77,8 @@ describe('1. IPC Channel Whitelist Enforcement', () => {
       'fs:readFile',
       'child_process:exec',
       'nexa:arbitrary-eval',
+      'nexa:storage-save-credentials',
+      'nexa:storage-clear-credentials',
       'process:kill',
       'electron:remote',
       '',
@@ -93,6 +97,7 @@ describe('1. IPC Channel Whitelist Enforcement', () => {
       'nexa:tray-event',
       'nexa:status-changed',
       'nexa:window-state-changed',
+      'nexa:storage-status-changed',
     ];
 
     validReceives.forEach((ch) => {

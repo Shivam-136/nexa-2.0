@@ -140,5 +140,16 @@ describe('2. Exposed Bridge Methods Verification', () => {
     requiredApiMethods.forEach((m) => {
       assert.equal(typeof nexaDesktopAPI[m], 'function', `Method ${m} must be defined`);
     });
+
+    // Milestone 3.2: Secure storage namespace verification
+    assert.equal(typeof nexaDesktopAPI.storage, 'object');
+    assert.equal(Object.isFrozen(nexaDesktopAPI.storage), true);
+    assert.equal(typeof nexaDesktopAPI.storage.getStatus, 'function');
+    assert.equal(typeof nexaDesktopAPI.storage.getDeviceInfo, 'function');
+    assert.equal(nexaDesktopAPI.storage.saveCredentials, undefined, 'saveCredentials MUST NOT be exposed on storage API');
+    assert.equal('saveCredentials' in nexaDesktopAPI.storage, false);
+    assert.equal(nexaDesktopAPI.storage.clearCredentials, undefined, 'clearCredentials MUST NOT be exposed on storage API');
+    assert.equal('clearCredentials' in nexaDesktopAPI.storage, false);
+    assert.equal(typeof nexaDesktopAPI.storage.onStatusChange, 'function');
   });
 });

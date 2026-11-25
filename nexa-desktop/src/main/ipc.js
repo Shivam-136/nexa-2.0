@@ -9,6 +9,7 @@
 const { ipcMain } = require('electron');
 const { IPC_CHANNELS, IPC_EVENTS } = require('./config');
 const { validatePingPayload } = require('../preload/channels');
+const { getSecureStorage } = require('./storage');
 
 let isRegistered = false;
 
@@ -17,13 +18,16 @@ let isRegistered = false;
  * @param {Object} options
  * @param {Function} options.getMainWindow - Function returning the primary BrowserWindow instance
  * @param {Function} options.onQuit - Function triggering graceful application shutdown
+ * @param {Object} [options.storageService] - SecureStorageService instance
  * @param {Object} [options.ipc = ipcMain] - IPC instance for dependency injection in tests
  * @param {Object} [options.appInfo] - Optional custom app metadata for tests
  */
-function registerIpcHandlers({ getMainWindow, onQuit, ipc = ipcMain, appInfo = null } = {}) {
+function registerIpcHandlers({ getMainWindow, onQuit, storageService = null, ipc = ipcMain, appInfo = null } = {}) {
   if (isRegistered) {
     unregisterIpcHandlers(ipc);
   }
+
+  const storage = storageService || getSecureStorage();
 
   // 1. Ping / Health check handler
   ipc.handle(IPC_CHANNELS.PING, async (event, message) => {
@@ -63,7 +67,10 @@ function registerIpcHandlers({ getMainWindow, onQuit, ipc = ipcMain, appInfo = n
   // 3. System & security status handler
   ipc.handle(IPC_CHANNELS.GET_SYSTEM_STATUS, async () => {
     const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
-    const isVisible = win && !win.isDestroyed() ? win.isVisible() : false;
+    const isVisible = win && !win.isDestroyed() && typeof win.isVisible === 'function' ? win.isVisible() : false;
+    const storageStatus = storage && typeof storage.getStatus === 'function'
+      ? storage.getStatus()
+      : { encryptionAvailable: false, hasVault: false, isPaired: false };
 
     return {
       status: 'online',
@@ -72,7 +79,9 @@ function registerIpcHandlers({ getMainWindow, onQuit, ipc = ipcMain, appInfo = n
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
+        storageEncryptionAvailable: storageStatus.encryptionAvailable,
       },
+      storage: storageStatus,
       tray: {
         integrated: true,
         active: true,
@@ -139,6 +148,30 @@ function registerIpcHandlers({ getMainWindow, onQuit, ipc = ipcMain, appInfo = n
       return true;
     }
     return false;
+  });
+
+  // 9. Storage get status handler
+  ipc.handle(IPC_CHANNELS.STORAGE_GET_STATUS, async () => {
+    try {
+      if (!storage || typeof storage.getStatus !== 'function') {
+        return { encryptionAvailable: false, hasVault: false, isPaired: false };
+      }
+      return storage.getStatus();
+    } catch (err) {
+      return { encryptionAvailable: false, hasVault: false, isPaired: false, error: err.message };
+    }
+  });
+
+  // 10. Storage get sanitized device info handler (NEVER returns raw secret token)
+  ipc.handle(IPC_CHANNELS.STORAGE_GET_DEVICE_INFO, async () => {
+    try {
+      if (!storage || typeof storage.getDeviceInfo !== 'function') {
+        return { isPaired: false, deviceId: null, deviceName: null, userId: null, backendUrl: null, pairedAt: null };
+      }
+      return storage.getDeviceInfo();
+    } catch (err) {
+      return { isPaired: false, error: err.message };
+    }
   });
 
   isRegistered = true;

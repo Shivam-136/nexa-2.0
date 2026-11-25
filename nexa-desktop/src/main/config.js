@@ -15,6 +15,8 @@ const IPC_CHANNELS = Object.freeze({
   WINDOW_CLOSE: 'nexa:window-close',
   WINDOW_IS_MAXIMIZED: 'nexa:window-is-maximized',
   APP_QUIT: 'nexa:app-quit',
+  STORAGE_GET_STATUS: 'nexa:storage-get-status',
+  STORAGE_GET_DEVICE_INFO: 'nexa:storage-get-device-info',
 });
 
 // Permitted IPC channels for main-to-renderer push events
@@ -22,6 +24,7 @@ const IPC_EVENTS = Object.freeze({
   TRAY_EVENT: 'nexa:tray-event',
   STATUS_CHANGED: 'nexa:status-changed',
   WINDOW_STATE_CHANGED: 'nexa:window-state-changed',
+  STORAGE_STATUS_CHANGED: 'nexa:storage-status-changed',
 });
 
 // Window geometry and presentation defaults matching NEXA 2.0 design

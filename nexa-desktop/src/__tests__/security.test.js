@@ -114,6 +114,38 @@ describe('2. Preload & Context Bridge Encapsulation', () => {
         `Expected safe method "${method}" to be exposed on nexaDesktopAPI`
       );
     });
+
+    // Storage namespace verification
+    assert.equal(typeof nexaDesktopAPI.storage, 'object', 'storage namespace must be defined');
+    assert.equal(Object.isFrozen(nexaDesktopAPI.storage), true, 'storage namespace must be frozen');
+
+    const expectedStorageMethods = [
+      'getStatus',
+      'getDeviceInfo',
+      'onStatusChange',
+    ];
+    expectedStorageMethods.forEach((method) => {
+      assert.equal(
+        typeof nexaDesktopAPI.storage[method],
+        'function',
+        `Expected storage method "${method}" to be exposed on nexaDesktopAPI.storage`
+      );
+    });
+
+    // Verify saveCredentials and clearCredentials are strictly prohibited
+    assert.equal(
+      nexaDesktopAPI.storage.saveCredentials,
+      undefined,
+      'SECURITY CRITICAL: saveCredentials must NEVER be exposed on window.nexaDesktop.storage'
+    );
+    assert.equal('saveCredentials' in nexaDesktopAPI.storage, false);
+
+    assert.equal(
+      nexaDesktopAPI.storage.clearCredentials,
+      undefined,
+      'SECURITY CRITICAL: clearCredentials must NEVER be exposed on window.nexaDesktop.storage'
+    );
+    assert.equal('clearCredentials' in nexaDesktopAPI.storage, false);
   });
 });
 

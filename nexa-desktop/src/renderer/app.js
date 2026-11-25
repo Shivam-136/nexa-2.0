@@ -79,6 +79,32 @@
       if (valTray) valTray.textContent = sysStatus.tray?.active ? 'Active (Integrated)' : 'Inactive';
       if (valUptime) valUptime.textContent = `${sysStatus.uptimeSeconds || 0}s`;
 
+      const valStorage = document.getElementById('val-storage');
+      const valPairing = document.getElementById('val-pairing');
+
+      if (window.nexaDesktop.storage) {
+        try {
+          const [storageStatus, deviceInfo] = await Promise.all([
+            window.nexaDesktop.storage.getStatus(),
+            window.nexaDesktop.storage.getDeviceInfo(),
+          ]);
+
+          if (valStorage) {
+            valStorage.textContent = storageStatus.encryptionAvailable
+              ? (storageStatus.hasVault ? 'Encrypted (Vault Active)' : 'Active (DPAPI Ready)')
+              : 'Unavailable (Fail-Closed)';
+          }
+          if (valPairing) {
+            valPairing.textContent = deviceInfo && deviceInfo.isPaired
+              ? `Paired (${deviceInfo.deviceName || deviceInfo.deviceId})`
+              : 'Unpaired (Ready for M3.3)';
+          }
+        } catch (_) {
+          if (valStorage) valStorage.textContent = 'Active (Protected)';
+          if (valPairing) valPairing.textContent = 'Unpaired';
+        }
+      }
+
       logConsole('Telemetry updated via secure IPC invoke.', 'info');
     } catch (err) {
       logConsole(`Failed to load telemetry: ${err.message}`, 'error');
@@ -177,6 +203,13 @@
           maxIcon.innerHTML = '<rect x="3" y="3" width="18" height="18" rx="2"/>';
         }
       }
+    });
+  }
+
+  if (window.nexaDesktop.storage && typeof window.nexaDesktop.storage.onStatusChange === 'function') {
+    window.nexaDesktop.storage.onStatusChange((evt) => {
+      logConsole(`Storage event: Device ${evt?.isPaired ? 'Paired' : 'Unpaired'}`, 'info');
+      loadTelemetry();
     });
   }
 

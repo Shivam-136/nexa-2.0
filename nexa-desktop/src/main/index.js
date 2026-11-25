@@ -17,6 +17,7 @@ const { createMainWindow, getMainWindow } = require('./window');
 const { createTray } = require('./tray');
 const { registerIpcHandlers } = require('./ipc');
 const { isQuitting, setQuitting, gracefulShutdown } = require('./lifecycle');
+const { getSecureStorage } = require('./storage');
 
 /**
  * Bootstrap the NEXA 2.0 Desktop Agent application.
@@ -62,15 +63,20 @@ function bootstrap() {
   app.whenReady().then(() => {
     console.info('====================================================');
     console.info(' NEXA 2.0 Desktop Agent - Core Daemon Starting...  ');
-    console.info(' Milestone 3.1: Foundational Windows Agent          ');
+    console.info(' Milestone 3.2: Secure Device Storage (DPAPI)       ');
     console.info(' Security: ContextIsolation=ON | Sandbox=ON        ');
     console.info(' NodeIntegration: OFF | SingleInstance: LOCKED      ');
     console.info('====================================================');
+
+    // Initialize Secure Device Storage service (safeStorage / DPAPI check)
+    const storageService = getSecureStorage();
+    storageService.init();
 
     // Register validated IPC handlers
     registerIpcHandlers({
       getMainWindow,
       onQuit: () => gracefulShutdown(app),
+      storageService,
     });
 
     // Initialize Windows System Tray

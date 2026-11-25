@@ -10,6 +10,7 @@ const electron = require('electron');
 const { destroyTray } = require('./tray');
 const { unregisterIpcHandlers } = require('./ipc');
 const { getMainWindow } = require('./window');
+const { getSecureStorage } = require('./storage');
 
 const { app } = (typeof electron === 'object' && electron !== null) ? electron : {};
 
@@ -61,7 +62,17 @@ function gracefulShutdown(appInstance = app) {
     console.warn('[NEXA Main] Warning unregistering IPC during shutdown:', err.message);
   }
 
-  // 3. Destroy main window if open
+  // 3. Clear sensitive in-memory credentials from memory
+  try {
+    const storage = getSecureStorage();
+    if (storage && typeof storage.clearMemoryCache === 'function') {
+      storage.clearMemoryCache();
+    }
+  } catch (err) {
+    console.warn('[NEXA Main] Warning clearing storage memory during shutdown:', err.message);
+  }
+
+  // 4. Destroy main window if open
   try {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {

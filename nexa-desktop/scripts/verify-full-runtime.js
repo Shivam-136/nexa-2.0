@@ -107,11 +107,49 @@ async function runTests() {
     'onTrayEvent',
     'onStatusChange',
     'onWindowStateChange',
+    'storage',
   ];
 
   expectedMethods.forEach((method) => {
     assert(bridgeCheck.methods.includes(method), `Exposed bridge method exists: ${method}`);
   });
+
+  // Test Storage API Bridge (Milestone 3.2)
+  const storageCheck = await win.webContents.executeJavaScript(`
+    (() => {
+      const s = window.nexaDesktop.storage;
+      return {
+        hasStorage: typeof s !== 'undefined',
+        isFrozen: Object.isFrozen(s),
+        hasGetStatus: s && typeof s.getStatus === 'function',
+        hasGetDeviceInfo: s && typeof s.getDeviceInfo === 'function',
+        hasSaveCredentials: s && typeof s.saveCredentials === 'function',
+        hasClearCredentials: s && typeof s.clearCredentials === 'function',
+        hasOnStatusChange: s && typeof s.onStatusChange === 'function',
+      };
+    })()
+  `);
+  assert(storageCheck.hasStorage === true, 'window.nexaDesktop.storage is exposed in main world');
+  assert(storageCheck.isFrozen === true, 'window.nexaDesktop.storage is frozen against tampering');
+  assert(storageCheck.hasGetStatus === true, 'storage.getStatus exists');
+  assert(storageCheck.hasGetDeviceInfo === true, 'storage.getDeviceInfo exists');
+  assert(storageCheck.hasSaveCredentials === false, 'CRITICAL: storage.saveCredentials MUST NOT be exposed to renderer');
+  assert(storageCheck.hasClearCredentials === false, 'CRITICAL: storage.clearCredentials MUST NOT be exposed to renderer');
+  assert(storageCheck.hasOnStatusChange === true, 'storage.onStatusChange exists');
+
+  // Test Storage status roundtrip via IPC
+  const storageStatus = await win.webContents.executeJavaScript(`
+    window.nexaDesktop.storage.getStatus()
+  `);
+  assert(typeof storageStatus.encryptionAvailable === 'boolean', 'storage.getStatus() reports encryptionAvailable');
+  assert(typeof storageStatus.isPaired === 'boolean', 'storage.getStatus() reports isPaired');
+
+  // Test storage.getDeviceInfo() token non-leakage guarantee
+  const deviceInfo = await win.webContents.executeJavaScript(`
+    window.nexaDesktop.storage.getDeviceInfo()
+  `);
+  assert(typeof deviceInfo.isPaired === 'boolean', 'deviceInfo returns isPaired');
+  assert(deviceInfo.deviceToken === undefined, 'CRITICAL: deviceToken is NEVER exposed over IPC to renderer');
 
   // Test Ping Bridge
   const pingResult = await win.webContents.executeJavaScript(`

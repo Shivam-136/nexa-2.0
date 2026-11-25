@@ -23,12 +23,15 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:window-close',
   'nexa:window-is-maximized',
   'nexa:app-quit',
+  'nexa:storage-get-status',
+  'nexa:storage-get-device-info',
 ]);
 
 const ALLOWED_RECEIVE_CHANNELS = new Set([
   'nexa:tray-event',
   'nexa:status-changed',
   'nexa:window-state-changed',
+  'nexa:storage-status-changed',
 ]);
 
 const MAX_PAYLOAD_STRING_LENGTH = 1024;
@@ -81,6 +84,7 @@ function validateCallback(callback) {
     throw new TypeError('IPC listener callback must be a valid function');
   }
 }
+
 
 /**
  * Creates a safe, filtered event subscriber.
@@ -212,6 +216,37 @@ const nexaDesktopAPI = Object.freeze({
   onWindowStateChange: (callback) => {
     return createSafeSubscriber('nexa:window-state-changed', callback);
   },
+
+  /**
+   * Secure Device Storage API backed by Windows DPAPI.
+   * Encryption occurs strictly in Main Process. Raw device tokens are NEVER exposed.
+   */
+  storage: Object.freeze({
+    /**
+     * Checks storage status and safeStorage encryption availability.
+     * @returns {Promise<{ encryptionAvailable: boolean, hasVault: boolean, isPaired: boolean }>}
+     */
+    getStatus: async () => {
+      return await ipcRenderer.invoke('nexa:storage-get-status');
+    },
+
+    /**
+     * Retrieves sanitized device metadata (GUARANTEE: deviceToken is strictly omitted).
+     * @returns {Promise<{ isPaired: boolean, deviceId: string|null, deviceName: string|null, userId: string|null, backendUrl: string|null, pairedAt: string|null }>}
+     */
+    getDeviceInfo: async () => {
+      return await ipcRenderer.invoke('nexa:storage-get-device-info');
+    },
+
+    /**
+     * Subscribes to storage status change events.
+     * @param {Function} callback
+     * @returns {Function} Unsubscribe function
+     */
+    onStatusChange: (callback) => {
+      return createSafeSubscriber('nexa:storage-status-changed', callback);
+    },
+  }),
 });
 
 // Expose strictly inside isolated world

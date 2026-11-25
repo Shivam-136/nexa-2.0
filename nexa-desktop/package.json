@@ -21,6 +21,6 @@
   "author": "NEXA Core Team",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^24.22.3"
+    "electron": "^45.3.4"
   }
 }

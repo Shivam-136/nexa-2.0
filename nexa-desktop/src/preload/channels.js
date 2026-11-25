@@ -12,12 +12,15 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:window-close',
   'nexa:window-is-maximized',
   'nexa:app-quit',
+  'nexa:storage-get-status',
+  'nexa:storage-get-device-info',
 ]);
 
 const ALLOWED_RECEIVE_CHANNELS = new Set([
   'nexa:tray-event',
   'nexa:status-changed',
   'nexa:window-state-changed',
+  'nexa:storage-status-changed',
 ]);
 
 const MAX_PAYLOAD_STRING_LENGTH = 1024;
