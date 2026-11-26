@@ -8,12 +8,83 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-function getAccessSecret() {
-  return process.env.JWT_ACCESS_SECRET || 'nexa_dev_access_secret_super_secure_key_12345';
+const TEST_ONLY_ACCESS_SECRET = 'nexa_isolated_test_jwt_access_secret_not_for_prod_00001';
+const TEST_ONLY_REFRESH_SECRET = 'nexa_isolated_test_jwt_refresh_secret_not_for_prod_00002';
+const DEV_ONLY_ACCESS_SECRET = 'nexa_isolated_dev_jwt_access_secret_local_only_00001';
+const DEV_ONLY_REFRESH_SECRET = 'nexa_isolated_dev_jwt_refresh_secret_local_only_00002';
+
+const KNOWN_INSECURE_JWT_DEFAULTS = new Set([
+  'nexa_dev_access_secret_super_secure_key_12345',
+  'nexa_dev_refresh_secret_super_secure_key_67890',
+  'your_jwt_access_secret_min_32_chars',
+  'your_jwt_refresh_secret_min_32_chars',
+  'changeme',
+  'secret',
+]);
+
+function isTestEnvironment() {
+  if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development') {
+    return false;
+  }
+  return process.env.NODE_ENV === 'test' || Boolean(process.env.NODE_TEST_CONTEXT);
 }
 
-function getRefreshSecret() {
-  return process.env.JWT_REFRESH_SECRET || 'nexa_dev_refresh_secret_super_secure_key_67890';
+/**
+ * Validates and returns { accessSecret, refreshSecret }.
+ * Fails closed in production if secrets are missing, weak (< 32 chars),
+ * insecure defaults, or identical. Keeps dev and test environments isolated.
+ * Never logs secret values.
+ */
+export function validateJwtSecretsConfig() {
+  const envAccess = (process.env.JWT_ACCESS_SECRET || '').trim();
+  const envRefresh = (process.env.JWT_REFRESH_SECRET || '').trim();
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!envAccess || !envRefresh) {
+      throw new Error(
+        'CONFIGURATION_ERROR: Missing required JWT_ACCESS_SECRET or JWT_REFRESH_SECRET in production'
+      );
+    }
+    if (envAccess.length < 32 || envRefresh.length < 32) {
+      throw new Error(
+        'CONFIGURATION_ERROR: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be at least 32 characters in production'
+      );
+    }
+    if (
+      KNOWN_INSECURE_JWT_DEFAULTS.has(envAccess) ||
+      KNOWN_INSECURE_JWT_DEFAULTS.has(envRefresh)
+    ) {
+      throw new Error(
+        'CONFIGURATION_ERROR: Insecure default JWT secret is prohibited in production'
+      );
+    }
+    if (envAccess === envRefresh) {
+      throw new Error(
+        'CONFIGURATION_ERROR: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be distinct in production'
+      );
+    }
+    return { accessSecret: envAccess, refreshSecret: envRefresh };
+  }
+
+  if (isTestEnvironment()) {
+    return {
+      accessSecret: envAccess || TEST_ONLY_ACCESS_SECRET,
+      refreshSecret: envRefresh || TEST_ONLY_REFRESH_SECRET,
+    };
+  }
+
+  return {
+    accessSecret: envAccess || DEV_ONLY_ACCESS_SECRET,
+    refreshSecret: envRefresh || DEV_ONLY_REFRESH_SECRET,
+  };
+}
+
+export function getAccessSecret() {
+  return validateJwtSecretsConfig().accessSecret;
+}
+
+export function getRefreshSecret() {
+  return validateJwtSecretsConfig().refreshSecret;
 }
 
 const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';

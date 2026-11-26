@@ -34,6 +34,28 @@ const pairingSessionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    operationId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'delivering', 'rolling_back', 'failed_rolled_back', 'completed'],
+      default: 'pending',
+      index: true,
+    },
+    encryptedCredentialBundle: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    recoveryLease: {
+      workerId: { type: String, default: null },
+      recoveryEpoch: { type: Number, default: 0 }, // Monotonic integer: never reset to null
+      fencedEpoch: { type: Number, default: 0 }, // Monotonic fence written before anchor takeover
+      expiresAt: { type: Date, default: null },
+      state: { type: String, default: 'idle' },
+    },
   },
   {
     timestamps: true,

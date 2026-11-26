@@ -66,6 +66,8 @@ export async function requireAuth(req, res, next) {
         ollamaBaseUrl: user.ollamaBaseUrl || 'http://127.0.0.1:11434',
         geminiFallback: user.geminiFallback ?? false,
         voiceLanguage: user.voiceLanguage || 'en-US',
+        role: user.role || 'user',
+        permissions: Array.isArray(user.permissions) ? user.permissions : [],
       };
     } else {
       // In offline / mock test mode, construct req.user from verified JWT payload
@@ -78,6 +80,8 @@ export async function requireAuth(req, res, next) {
         ollamaBaseUrl: 'http://127.0.0.1:11434',
         geminiFallback: false,
         voiceLanguage: 'en-US',
+        role: 'user',
+        permissions: [],
       };
     }
 
@@ -130,4 +134,43 @@ export async function optionalAuth(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/**
+ * Administrative authorization middleware.
+ * Must be used AFTER `requireAuth`. Verifies `req.user.role === 'admin'`
+ * and that `req.user.permissions` includes the required permission (or '*').
+ * Never trusts role, permissions, or admin identity from request body.
+ * @param {string} requiredPermission
+ */
+export function requireAdmin(requiredPermission = 'device:admin_reset') {
+  return (req, res, next) => {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.',
+      });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN: Administrator role is required for this operation.',
+      });
+    }
+
+    const permissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
+    if (
+      requiredPermission &&
+      !permissions.includes(requiredPermission) &&
+      !permissions.includes('*')
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: `FORBIDDEN: Missing required administrative permission (${requiredPermission}).`,
+      });
+    }
+
+    next();
+  };
 }

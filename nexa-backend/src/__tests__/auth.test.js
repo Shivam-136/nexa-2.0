@@ -20,6 +20,9 @@ import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   REFRESH_COOKIE_NAME,
+  getAccessSecret,
+  getRefreshSecret,
+  validateJwtSecretsConfig,
 } from '../utils/auth.utils.js';
 
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware.js';
@@ -330,7 +333,7 @@ describe('NEXA 2.0 Phase 6 Milestone 1 — Authentication & Multi-Tenant Isolati
     });
 
     it('requireAuth should reject expired token with code TOKEN_EXPIRED', async () => {
-      const secret = process.env.JWT_ACCESS_SECRET || 'nexa_dev_access_secret_super_secure_key_12345';
+      const secret = getAccessSecret();
       const expiredToken = jwt.sign(
         { userId: 'u1', exp: Math.floor(Date.now() / 1000) - 30 },
         secret
@@ -796,7 +799,7 @@ describe('NEXA 2.0 Phase 6 Milestone 1 — Authentication & Multi-Tenant Isolati
     });
 
     it('Refresh token rotation detects invalid or revoked token', async () => {
-      const secret = process.env.JWT_REFRESH_SECRET || 'nexa_dev_refresh_secret_super_secure_key_67890';
+      const secret = getRefreshSecret();
       const validPayload = { userId: 'u123', tokenId: 'tok_random_1' };
       const token = jwt.sign(validPayload, secret);
 
@@ -808,6 +811,64 @@ describe('NEXA 2.0 Phase 6 Milestone 1 — Authentication & Multi-Tenant Isolati
       assert.throws(() => {
         verifyRefreshToken('forged.refresh.token');
       });
+    });
+
+    it('validateJwtSecretsConfig fails closed in production and isolates dev/test configs', () => {
+      const origNodeEnv = process.env.NODE_ENV;
+      const origAccess = process.env.JWT_ACCESS_SECRET;
+      const origRefresh = process.env.JWT_REFRESH_SECRET;
+
+      try {
+        // 1. Production with missing secrets -> throws CONFIGURATION_ERROR
+        process.env.NODE_ENV = 'production';
+        delete process.env.JWT_ACCESS_SECRET;
+        delete process.env.JWT_REFRESH_SECRET;
+        assert.throws(() => validateJwtSecretsConfig(), /CONFIGURATION_ERROR/);
+
+        // 2. Production with short secrets (< 32 chars) -> throws CONFIGURATION_ERROR
+        process.env.JWT_ACCESS_SECRET = 'short_access';
+        process.env.JWT_REFRESH_SECRET = 'short_refresh';
+        assert.throws(() => validateJwtSecretsConfig(), /CONFIGURATION_ERROR/);
+
+        // 3. Production with known insecure defaults -> throws CONFIGURATION_ERROR
+        process.env.JWT_ACCESS_SECRET = 'nexa_dev_access_secret_super_secure_key_12345';
+        process.env.JWT_REFRESH_SECRET = 'nexa_dev_refresh_secret_super_secure_key_67890';
+        assert.throws(() => validateJwtSecretsConfig(), /CONFIGURATION_ERROR/);
+
+        // 4. Production with identical access & refresh secrets -> throws CONFIGURATION_ERROR
+        process.env.JWT_ACCESS_SECRET = 'prod_same_secret_0123456789abcdef_0123456789abcdef';
+        process.env.JWT_REFRESH_SECRET = 'prod_same_secret_0123456789abcdef_0123456789abcdef';
+        assert.throws(() => validateJwtSecretsConfig(), /CONFIGURATION_ERROR/);
+
+        // 5. Production with valid distinct >= 32 char secrets -> succeeds
+        process.env.JWT_ACCESS_SECRET = 'prod_access_secret_0123456789abcdef_0123456789';
+        process.env.JWT_REFRESH_SECRET = 'prod_refresh_secret_fedcba9876543210_fedcba9876';
+        const prodCfg = validateJwtSecretsConfig();
+        assert.equal(prodCfg.accessSecret, process.env.JWT_ACCESS_SECRET);
+        assert.equal(prodCfg.refreshSecret, process.env.JWT_REFRESH_SECRET);
+
+        // 6. Test environment uses isolated test secrets when env vars unset
+        process.env.NODE_ENV = 'test';
+        delete process.env.JWT_ACCESS_SECRET;
+        delete process.env.JWT_REFRESH_SECRET;
+        const testCfg = validateJwtSecretsConfig();
+        assert.ok(testCfg.accessSecret.length >= 32);
+        assert.ok(testCfg.refreshSecret.length >= 32);
+        assert.notEqual(testCfg.accessSecret, 'nexa_dev_access_secret_super_secure_key_12345');
+
+        // 7. Development environment uses isolated dev secrets (distinct from test)
+        process.env.NODE_ENV = 'development';
+        const devCfg = validateJwtSecretsConfig();
+        assert.notEqual(devCfg.accessSecret, testCfg.accessSecret);
+        assert.notEqual(devCfg.refreshSecret, testCfg.refreshSecret);
+      } finally {
+        if (origNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = origNodeEnv;
+        if (origAccess === undefined) delete process.env.JWT_ACCESS_SECRET;
+        else process.env.JWT_ACCESS_SECRET = origAccess;
+        if (origRefresh === undefined) delete process.env.JWT_REFRESH_SECRET;
+        else process.env.JWT_REFRESH_SECRET = origRefresh;
+      }
     });
   });
 });

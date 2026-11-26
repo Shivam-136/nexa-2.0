@@ -5,7 +5,8 @@ const deviceSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'User ID is required'],
+      required: false,
+      default: null,
       index: true,
     },
     deviceId: {
@@ -21,9 +22,76 @@ const deviceSchema = new mongoose.Schema(
       trim: true,
       maxlength: 100,
     },
+    deviceGeneration: {
+      type: Number,
+      required: true,
+      default: 1,
+      index: true,
+    },
+    hashedMasterRecoveryCode: {
+      type: String,
+      default: null,
+    },
+    fencingTokenSequence: {
+      type: Number,
+      default: 0,
+    },
     hashedDeviceToken: {
       type: String,
       default: null,
+    },
+    stagedDeviceToken: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    pendingResetAuth: {
+      ratId: { type: String, default: null },
+      deviceGeneration: { type: Number, default: null },
+      intendedNewUserId: { type: String, default: null },
+      clientRecoveryPubKey: { type: Buffer, default: null },
+      clientRecoveryPubKeyFingerprint: { type: String, default: null },
+      // DURABLE IDEMPOTENCY FIELDS
+      persistedSignedRat: { type: String, default: null },
+      persistedRatHash: { type: String, default: null },
+      consumedNonces: { type: [String], default: [] },
+      lastRetryTimestamp: { type: Number, default: 0 },
+      lastRetryAt: { type: Date, default: null },
+      retryCounter: { type: Number, default: 0 },
+      expiresAt: { type: Date, default: null },
+      isConsumed: { type: Boolean, default: false },
+    },
+    activePairingLock: {
+      state: {
+        type: String,
+        enum: ['idle', 'in_pairing', 'revocation_committed'],
+        default: 'idle',
+      },
+      operationId: { type: String, default: null },
+      recoveryWorkerId: { type: String, default: null },
+      recoveryEpoch: { type: Number, default: 0 }, // Monotonic integer: never reset to null
+      recoveryLeaseExpiresAt: { type: Date, default: null },
+      milestoneState: {
+        type: String,
+        enum: ['idle', 'milestone_a_done', 'milestone_b_in_progress'],
+        default: 'idle',
+      },
+      lastAnchorVerificationAt: { type: Date, default: null },
+      deliveryFence: {
+        clientRetrievalId: { type: String, default: null },
+        clientSessionPubKey: { type: Buffer, default: null },
+        fencingToken: { type: Number, default: 0 }, // Monotonic integer: never reset to null
+        expiresAt: { type: Date, default: null },
+      },
+    },
+    lastConfirmedActivationAt: {
+      type: Date,
+      default: null,
+    },
+    lastConfirmedActivation: {
+      operationId: { type: String, default: null },
+      clientRetrievalId: { type: String, default: null },
+      fencingToken: { type: Number, default: null },
+      clientSessionPubKey: { type: Buffer, default: null },
     },
     isOnline: {
       type: Boolean,

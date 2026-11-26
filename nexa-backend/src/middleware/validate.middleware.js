@@ -11,12 +11,13 @@ export function validateBody(schema) {
       next();
     } catch (err) {
       if (err instanceof ZodError) {
-        const errorMessages = err.errors.map((e) => e.message);
+        const issues = err.issues || err.errors || [];
+        const errorMessages = issues.map((e) => e.message);
         return res.status(400).json({
           success: false,
           error: errorMessages[0] || 'Invalid input data',
-          errors: err.errors.map((e) => ({
-            field: e.path.join('.'),
+          errors: issues.map((e) => ({
+            field: Array.isArray(e.path) ? e.path.join('.') : String(e.path || ''),
             message: e.message,
           })),
         });

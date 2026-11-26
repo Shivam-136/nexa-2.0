@@ -81,6 +81,16 @@ const userSchema = new mongoose.Schema(
       default: 'en-US',
       maxlength: 30,
     },
+    role: {
+      type: String,
+      enum: ['user', 'admin'],
+      default: 'user',
+      index: true,
+    },
+    permissions: {
+      type: [String],
+      default: [],
+    },
     refreshTokens: [refreshTokenSubSchema],
   },
   {

@@ -1,6 +1,17 @@
 import app from './app.js';
 import { isGeminiConfigured, getGeminiModel } from './config/gemini.js';
 import { connectDatabase, disconnectDatabase, getDatabaseStatus } from './config/db.js';
+import { validateRatSecretConfig } from './services/pairing.service.js';
+import { validateJwtSecretsConfig } from './utils/auth.utils.js';
+
+// Fail closed at startup if required secret configuration is missing or invalid
+try {
+  validateRatSecretConfig();
+  validateJwtSecretsConfig();
+} catch (err) {
+  console.error(`[Startup Configuration Error] ${err.message}`);
+  process.exit(1);
+}
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 

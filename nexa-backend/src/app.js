@@ -10,6 +10,7 @@ import chatRoutes from './routes/chat.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import memoryRoutes from './routes/memory.routes.js';
 import conversationRoutes from './routes/conversation.routes.js';
+import pairingRoutes from './routes/pairing.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,6 +71,10 @@ app.use('/api/v1/memories', memoryRoutes);
 // Persistent Conversation History Endpoints (Phase 5)
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/v1/conversations', conversationRoutes);
+
+// Device Pairing & Disaster Recovery Endpoints (Milestone 3.3)
+app.use('/api/pairing', pairingRoutes);
+app.use('/api/v1/pairing', pairingRoutes);
 
 // 404 & Error Handlers
 app.use(notFoundHandler);

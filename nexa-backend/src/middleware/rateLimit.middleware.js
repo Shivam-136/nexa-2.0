@@ -30,3 +30,18 @@ export const sessionRateLimiter = rateLimit({
   },
   statusCode: 429,
 });
+
+/**
+ * Rate limiter for pairing and recovery endpoints.
+ */
+export const pairingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 5000 : 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many recovery or pairing requests. Please slow down.',
+  },
+  statusCode: 429,
+});
