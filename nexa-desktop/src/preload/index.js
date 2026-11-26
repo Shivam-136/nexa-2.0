@@ -25,6 +25,16 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:app-quit',
   'nexa:storage-get-status',
   'nexa:storage-get-device-info',
+  'nexa:pairing-claim',
+  'nexa:pairing-cancel',
+  'nexa:pairing-get-status',
+  'nexa:device-auth-get-status',
+  'nexa:device-auth-authenticate',
+  'nexa:device-auth-verify',
+  'nexa:heartbeat-get-status',
+  'nexa:heartbeat-start',
+  'nexa:heartbeat-stop',
+  'nexa:heartbeat-send-now',
 ]);
 
 const ALLOWED_RECEIVE_CHANNELS = new Set([
@@ -32,6 +42,9 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'nexa:status-changed',
   'nexa:window-state-changed',
   'nexa:storage-status-changed',
+  'nexa:pairing-status-changed',
+  'nexa:device-auth-status-changed',
+  'nexa:heartbeat-status-changed',
 ]);
 
 const MAX_PAYLOAD_STRING_LENGTH = 1024;
@@ -245,6 +258,148 @@ const nexaDesktopAPI = Object.freeze({
      */
     onStatusChange: (callback) => {
       return createSafeSubscriber('nexa:storage-status-changed', callback);
+    },
+  }),
+
+  /**
+   * Device Pairing API (M3.4.1).
+   * Pairing claim executes strictly in Main Process; deviceToken is NEVER exposed.
+   */
+  pairing: Object.freeze({
+    /**
+     * Claims a pairing code with the backend and stores credentials in DPAPI storage.
+     * @param {{ pairingCode: string, deviceName?: string, backendUrl?: string }} payload
+     * @returns {Promise<{ success: boolean, status?: string, deviceInfo?: Object, error?: string }>}
+     */
+    claim: async (payload) => {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new TypeError('Pairing claim payload must be an object');
+      }
+      if (typeof payload.pairingCode !== 'string' || !payload.pairingCode.trim()) {
+        throw new TypeError('pairingCode must be a non-empty string');
+      }
+      const sanitized = {
+        pairingCode: payload.pairingCode.replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 32),
+      };
+      if (typeof payload.deviceName === 'string' && payload.deviceName.trim()) {
+        sanitized.deviceName = payload.deviceName.replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 100);
+      }
+      if (typeof payload.backendUrl === 'string' && payload.backendUrl.trim()) {
+        sanitized.backendUrl = payload.backendUrl.replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 512);
+      }
+      return await ipcRenderer.invoke('nexa:pairing-claim', sanitized);
+    },
+
+    /**
+     * Cancels an in-flight pairing attempt.
+     * @returns {Promise<{ success: boolean, cancelled: boolean, status: string }>}
+     */
+    cancel: async () => {
+      return await ipcRenderer.invoke('nexa:pairing-cancel');
+    },
+
+    /**
+     * Retrieves sanitized pairing status and connected account metadata.
+     * @returns {Promise<{ state: string, isPaired: boolean, encryptionAvailable: boolean, deviceInfo: Object, lastError: string|null }>}
+     */
+    getStatus: async () => {
+      return await ipcRenderer.invoke('nexa:pairing-get-status');
+    },
+
+    /**
+     * Subscribes to pairing status change events.
+     * @param {Function} callback
+     * @returns {Function} Unsubscribe function
+     */
+    onStatusChange: (callback) => {
+      return createSafeSubscriber('nexa:pairing-status-changed', callback);
+    },
+  }),
+
+  /**
+   * Device Authentication Status API (M3.4.2).
+   * Authentication & token rotation execute strictly in Main Process;
+   * deviceToken, accessToken, and refreshToken are NEVER exposed.
+   */
+  deviceAuth: Object.freeze({
+    /**
+     * Retrieves sanitized device authentication status.
+     * @returns {Promise<{ state: string, isPaired: boolean, authenticated: boolean, deviceId: string|null, deviceGeneration: number|null, userId: string|null, expiresAt: string|null, lastError: string|null }>}
+     */
+    getStatus: async () => {
+      return await ipcRenderer.invoke('nexa:device-auth-get-status');
+    },
+
+    /**
+     * Triggers device-to-backend authentication in the Main Process.
+     * @returns {Promise<{ success: boolean, authenticated?: boolean, state?: string, error?: string }>}
+     */
+    authenticate: async () => {
+      return await ipcRenderer.invoke('nexa:device-auth-authenticate');
+    },
+
+    /**
+     * Verifies the active device session against the backend.
+     * @returns {Promise<{ success: boolean, authenticated?: boolean, device?: Object, error?: string }>}
+     */
+    verify: async () => {
+      return await ipcRenderer.invoke('nexa:device-auth-verify');
+    },
+
+    /**
+     * Subscribes to device authentication status change events.
+     * @param {Function} callback
+     * @returns {Function} Unsubscribe function
+     */
+    onStatusChange: (callback) => {
+      return createSafeSubscriber('nexa:device-auth-status-changed', callback);
+    },
+  }),
+
+  /**
+   * Device Heartbeat & Connection State API (M3.4.3).
+   * Heartbeat executes strictly in Main Process; tokens are NEVER exposed.
+   */
+  heartbeat: Object.freeze({
+    /**
+     * Retrieves sanitized connection status and heartbeat metadata.
+     * @returns {Promise<{ state: string, isOnline: boolean, isRunning: boolean, deviceId: string|null, lastSuccessfulHeartbeatAt: string|null, lastError: string|null }>}
+     */
+    getStatus: async () => {
+      return await ipcRenderer.invoke('nexa:heartbeat-get-status');
+    },
+
+    /**
+     * Starts the periodic heartbeat loop in Main Process.
+     * @returns {Promise<Object>}
+     */
+    start: async () => {
+      return await ipcRenderer.invoke('nexa:heartbeat-start');
+    },
+
+    /**
+     * Stops the periodic heartbeat loop in Main Process.
+     * @returns {Promise<Object>}
+     */
+    stop: async () => {
+      return await ipcRenderer.invoke('nexa:heartbeat-stop');
+    },
+
+    /**
+     * Triggers an immediate authenticated heartbeat.
+     * @returns {Promise<Object>}
+     */
+    sendNow: async () => {
+      return await ipcRenderer.invoke('nexa:heartbeat-send-now');
+    },
+
+    /**
+     * Subscribes to heartbeat connection state change events.
+     * @param {Function} callback
+     * @returns {Function} Unsubscribe function
+     */
+    onStatusChange: (callback) => {
+      return createSafeSubscriber('nexa:heartbeat-status-changed', callback);
     },
   }),
 });

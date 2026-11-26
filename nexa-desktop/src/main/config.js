@@ -17,6 +17,16 @@ const IPC_CHANNELS = Object.freeze({
   APP_QUIT: 'nexa:app-quit',
   STORAGE_GET_STATUS: 'nexa:storage-get-status',
   STORAGE_GET_DEVICE_INFO: 'nexa:storage-get-device-info',
+  PAIRING_CLAIM: 'nexa:pairing-claim',
+  PAIRING_CANCEL: 'nexa:pairing-cancel',
+  PAIRING_GET_STATUS: 'nexa:pairing-get-status',
+  DEVICE_AUTH_GET_STATUS: 'nexa:device-auth-get-status',
+  DEVICE_AUTH_AUTHENTICATE: 'nexa:device-auth-authenticate',
+  DEVICE_AUTH_VERIFY: 'nexa:device-auth-verify',
+  HEARTBEAT_GET_STATUS: 'nexa:heartbeat-get-status',
+  HEARTBEAT_START: 'nexa:heartbeat-start',
+  HEARTBEAT_STOP: 'nexa:heartbeat-stop',
+  HEARTBEAT_SEND_NOW: 'nexa:heartbeat-send-now',
 });
 
 // Permitted IPC channels for main-to-renderer push events
@@ -25,6 +35,9 @@ const IPC_EVENTS = Object.freeze({
   STATUS_CHANGED: 'nexa:status-changed',
   WINDOW_STATE_CHANGED: 'nexa:window-state-changed',
   STORAGE_STATUS_CHANGED: 'nexa:storage-status-changed',
+  PAIRING_STATUS_CHANGED: 'nexa:pairing-status-changed',
+  DEVICE_AUTH_STATUS_CHANGED: 'nexa:device-auth-status-changed',
+  HEARTBEAT_STATUS_CHANGED: 'nexa:heartbeat-status-changed',
 });
 
 // Window geometry and presentation defaults matching NEXA 2.0 design

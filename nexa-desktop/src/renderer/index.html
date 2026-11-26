@@ -156,6 +156,49 @@
         </div>
       </section>
 
+      <!-- Device Pairing Card (M3.4.1) -->
+      <section class="glass-panel" id="pairing-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Device Pairing (M3.4.1)</h2>
+          <span class="badge-mini" id="pairing-status-badge">Unpaired</span>
+        </div>
+        <p class="panel-hint">Enter the 8-character pairing code from your NEXA 2.0 web dashboard to bind this workstation.</p>
+
+        <div class="ipc-input-group">
+          <input type="text" id="pairing-code-input" class="glass-input" placeholder="Pairing Code (e.g. ABCD-2345)" maxlength="16" autocomplete="off">
+          <input type="text" id="pairing-device-name-input" class="glass-input" placeholder="Device Name (optional)" maxlength="100" autocomplete="off">
+          <button id="btn-pair-device" class="action-btn-primary">Pair Device</button>
+          <button id="btn-cancel-pairing" class="action-btn-sm" disabled>Cancel</button>
+        </div>
+
+        <div class="telemetry-table" id="pairing-account-status">
+          <div class="telemetry-row">
+            <span class="telemetry-label">Connected Account:</span>
+            <span class="telemetry-val" id="val-connected-account">Not Paired</span>
+          </div>
+          <div class="telemetry-row">
+            <span class="telemetry-label">Device ID:</span>
+            <span class="telemetry-val" id="val-paired-device-id">—</span>
+          </div>
+          <div class="telemetry-row">
+            <span class="telemetry-label">Paired At:</span>
+            <span class="telemetry-val" id="val-paired-at">—</span>
+          </div>
+          <div class="telemetry-row">
+            <span class="telemetry-label">Connection State:</span>
+            <span class="telemetry-val" id="val-heartbeat-state">OFFLINE</span>
+          </div>
+          <div class="telemetry-row">
+            <span class="telemetry-label">Last Heartbeat:</span>
+            <span class="telemetry-val" id="val-last-heartbeat">—</span>
+          </div>
+          <div class="telemetry-row">
+            <span class="telemetry-label">Connection Info:</span>
+            <span class="telemetry-val" id="val-heartbeat-error">None</span>
+          </div>
+        </div>
+      </section>
+
       <!-- Quick Actions Footer -->
       <footer class="footer-actions">
         <button id="btn-minimize-tray" class="action-btn-secondary">

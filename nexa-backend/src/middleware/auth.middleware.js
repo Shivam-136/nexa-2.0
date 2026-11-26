@@ -41,10 +41,10 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    if (!payload?.userId) {
+    if (!payload?.userId || (payload?.typ && String(payload.typ).startsWith('nexa_device_'))) {
       return res.status(401).json({
         success: false,
-        error: 'Invalid token payload. Missing user identity.',
+        error: 'Invalid token payload. Device tokens cannot authenticate as user sessions.',
       });
     }
 
@@ -103,7 +103,7 @@ export async function optionalAuth(req, res, next) {
       if (token) {
         try {
           const payload = verifyAccessToken(token);
-          if (payload?.userId) {
+          if (payload?.userId && !(payload?.typ && String(payload.typ).startsWith('nexa_device_'))) {
             if (mongoose.connection.readyState === 1) {
               const user = await User.findById(payload.userId).lean();
               if (user) {

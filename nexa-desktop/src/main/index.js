@@ -18,6 +18,9 @@ const { createTray } = require('./tray');
 const { registerIpcHandlers } = require('./ipc');
 const { isQuitting, setQuitting, gracefulShutdown } = require('./lifecycle');
 const { getSecureStorage } = require('./storage');
+const { PairingClient } = require('./pairing/pairingClient');
+const { DeviceAuthClient } = require('./auth/deviceAuthClient');
+const { HeartbeatClient } = require('./heartbeat/heartbeatClient');
 
 /**
  * Bootstrap the NEXA 2.0 Desktop Agent application.
@@ -72,12 +75,57 @@ function bootstrap() {
     const storageService = getSecureStorage();
     storageService.init();
 
+    // Initialize Device Pairing Client (Main Process only)
+    const { sendToRenderer } = require('./ipc');
+    const { IPC_EVENTS } = require('./config');
+    const pairingClient = new PairingClient({
+      storageService,
+      onStatusChange: (statusPayload) => {
+        sendToRenderer(getMainWindow(), IPC_EVENTS.PAIRING_STATUS_CHANGED, statusPayload);
+      },
+    });
+
+    // Initialize Device Authentication Client (Main Process only)
+    let heartbeatClient = null;
+    const deviceAuthClient = new DeviceAuthClient({
+      storageService,
+      onStatusChange: (statusPayload) => {
+        sendToRenderer(getMainWindow(), IPC_EVENTS.DEVICE_AUTH_STATUS_CHANGED, statusPayload);
+        if (heartbeatClient && statusPayload?.state === 'authenticated' && !heartbeatClient.getStatus().isRunning) {
+          heartbeatClient.start();
+        }
+      },
+    });
+
+    // Initialize Heartbeat Client (Main Process only)
+    heartbeatClient = new HeartbeatClient({
+      deviceAuthClient,
+      onStateChange: (statusPayload) => {
+        sendToRenderer(getMainWindow(), IPC_EVENTS.HEARTBEAT_STATUS_CHANGED, statusPayload);
+      },
+    });
+
+    app.on('before-quit', () => {
+      heartbeatClient.stop();
+      deviceAuthClient.clearSession();
+    });
+
     // Register validated IPC handlers
     registerIpcHandlers({
       getMainWindow,
       onQuit: () => gracefulShutdown(app),
       storageService,
+      pairingClient,
+      deviceAuthClient,
+      heartbeatClient,
     });
+
+    // Automatically authenticate & start heartbeat if device is already paired
+    if (storageService.hasCredentials()) {
+      deviceAuthClient.authenticate().catch((err) => {
+        console.warn('[NEXA Main] Startup device authentication deferred:', err.message);
+      });
+    }
 
     // Initialize Windows System Tray
     createTray({

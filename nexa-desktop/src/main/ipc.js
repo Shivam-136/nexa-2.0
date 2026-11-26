@@ -10,6 +10,9 @@ const { ipcMain } = require('electron');
 const { IPC_CHANNELS, IPC_EVENTS } = require('./config');
 const { validatePingPayload } = require('../preload/channels');
 const { getSecureStorage } = require('./storage');
+const { PairingClient } = require('./pairing/pairingClient');
+const { DeviceAuthClient } = require('./auth/deviceAuthClient');
+const { HeartbeatClient, CONNECTION_STATES } = require('./heartbeat/heartbeatClient');
 
 let isRegistered = false;
 
@@ -22,12 +25,33 @@ let isRegistered = false;
  * @param {Object} [options.ipc = ipcMain] - IPC instance for dependency injection in tests
  * @param {Object} [options.appInfo] - Optional custom app metadata for tests
  */
-function registerIpcHandlers({ getMainWindow, onQuit, storageService = null, ipc = ipcMain, appInfo = null } = {}) {
+function registerIpcHandlers({ getMainWindow, onQuit, storageService = null, pairingClient = null, deviceAuthClient = null, heartbeatClient = null, ipc = ipcMain, appInfo = null } = {}) {
   if (isRegistered) {
     unregisterIpcHandlers(ipc);
   }
 
   const storage = storageService || getSecureStorage();
+  const pairing = pairingClient || new PairingClient({
+    storageService: storage,
+    onStatusChange: (statusPayload) => {
+      const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
+      sendToRenderer(win, IPC_EVENTS.PAIRING_STATUS_CHANGED, statusPayload);
+    },
+  });
+  const deviceAuth = deviceAuthClient || new DeviceAuthClient({
+    storageService: storage,
+    onStatusChange: (statusPayload) => {
+      const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
+      sendToRenderer(win, IPC_EVENTS.DEVICE_AUTH_STATUS_CHANGED, statusPayload);
+    },
+  });
+  const heartbeat = heartbeatClient || new HeartbeatClient({
+    deviceAuthClient: deviceAuth,
+    onStateChange: (statusPayload) => {
+      const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
+      sendToRenderer(win, IPC_EVENTS.HEARTBEAT_STATUS_CHANGED, statusPayload);
+    },
+  });
 
   // 1. Ping / Health check handler
   ipc.handle(IPC_CHANNELS.PING, async (event, message) => {
@@ -171,6 +195,143 @@ function registerIpcHandlers({ getMainWindow, onQuit, storageService = null, ipc
       return storage.getDeviceInfo();
     } catch (err) {
       return { isPaired: false, error: err.message };
+    }
+  });
+
+  // 11. Pairing claim handler (executes strictly in Main Process; NEVER returns deviceToken)
+  ipc.handle(IPC_CHANNELS.PAIRING_CLAIM, async (_event, payload) => {
+    try {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { success: false, error: 'INVALID_PAYLOAD: Pairing payload must be an object' };
+      }
+      const result = await pairing.claimPairing({
+        pairingCode: payload.pairingCode,
+        deviceName: payload.deviceName,
+        backendUrl: payload.backendUrl,
+      });
+      const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
+      if (storage && typeof storage.getStatus === 'function') {
+        sendToRenderer(win, IPC_EVENTS.STORAGE_STATUS_CHANGED, storage.getStatus());
+      }
+      return result;
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message,
+      };
+    }
+  });
+
+  // 12. Pairing cancel handler
+  ipc.handle(IPC_CHANNELS.PAIRING_CANCEL, async () => {
+    try {
+      return pairing.cancelPairing();
+    } catch (err) {
+      return { success: false, cancelled: false, error: err.message };
+    }
+  });
+
+  // 13. Pairing status handler (sanitized metadata only)
+  ipc.handle(IPC_CHANNELS.PAIRING_GET_STATUS, async () => {
+    try {
+      return pairing.getStatus();
+    } catch (err) {
+      return { state: 'error', isPaired: false, error: err.message };
+    }
+  });
+
+  // 14. Device Auth status handler (sanitized metadata only; NEVER exposes tokens)
+  ipc.handle(IPC_CHANNELS.DEVICE_AUTH_GET_STATUS, async () => {
+    try {
+      return deviceAuth.getAuthStatus();
+    } catch (err) {
+      return { state: 'error', isPaired: false, authenticated: false, error: err.message };
+    }
+  });
+
+  // 15. Device Auth authenticate handler (executes strictly in Main Process; NEVER returns tokens)
+  ipc.handle(IPC_CHANNELS.DEVICE_AUTH_AUTHENTICATE, async () => {
+    try {
+      return await deviceAuth.authenticate();
+    } catch (err) {
+      return {
+        success: false,
+        authenticated: false,
+        code: err.code || 'DEVICE_AUTH_FAILED',
+        error: err.message,
+      };
+    }
+  });
+
+  // 16. Device Auth verify handler (executes strictly in Main Process; NEVER returns tokens)
+  ipc.handle(IPC_CHANNELS.DEVICE_AUTH_VERIFY, async () => {
+    try {
+      return await deviceAuth.verifyDeviceSession();
+    } catch (err) {
+      return {
+        success: false,
+        authenticated: false,
+        code: err.code || 'DEVICE_VERIFY_FAILED',
+        error: err.message,
+      };
+    }
+  });
+
+  // 17. Heartbeat get status handler (sanitized metadata only; NEVER exposes tokens)
+  ipc.handle(IPC_CHANNELS.HEARTBEAT_GET_STATUS, async () => {
+    try {
+      return heartbeat.getStatus();
+    } catch (err) {
+      return {
+        state: CONNECTION_STATES.ERROR,
+        isOnline: false,
+        isRunning: false,
+        lastSuccessfulHeartbeatAt: null,
+        lastError: err.message,
+      };
+    }
+  });
+
+  // 18. Heartbeat start handler
+  ipc.handle(IPC_CHANNELS.HEARTBEAT_START, async () => {
+    try {
+      heartbeat.start();
+      return heartbeat.getStatus();
+    } catch (err) {
+      return {
+        state: CONNECTION_STATES.ERROR,
+        isOnline: false,
+        isRunning: false,
+        lastError: err.message,
+      };
+    }
+  });
+
+  // 19. Heartbeat stop handler
+  ipc.handle(IPC_CHANNELS.HEARTBEAT_STOP, async () => {
+    try {
+      heartbeat.stop();
+      return heartbeat.getStatus();
+    } catch (err) {
+      return {
+        state: CONNECTION_STATES.ERROR,
+        isOnline: false,
+        isRunning: false,
+        lastError: err.message,
+      };
+    }
+  });
+
+  // 20. Heartbeat immediate send handler
+  ipc.handle(IPC_CHANNELS.HEARTBEAT_SEND_NOW, async () => {
+    try {
+      return await heartbeat.sendHeartbeat();
+    } catch (err) {
+      return {
+        state: CONNECTION_STATES.ERROR,
+        isOnline: false,
+        lastError: err.message,
+      };
     }
   });
 

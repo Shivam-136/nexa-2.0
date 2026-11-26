@@ -60,6 +60,7 @@ export const API_ENDPOINTS = {
   MEMORIES: '/memories',
   CONVERSATIONS: '/conversations',
   OLLAMA_STATUS: '/chat/ollama/status',
+  PAIRING: '/v1/pairing',
 };
 
 export const DEFAULT_AI_PROVIDER = 'ollama';

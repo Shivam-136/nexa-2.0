@@ -11,6 +11,7 @@ import healthRoutes from './routes/health.routes.js';
 import memoryRoutes from './routes/memory.routes.js';
 import conversationRoutes from './routes/conversation.routes.js';
 import pairingRoutes from './routes/pairing.routes.js';
+import deviceRoutes from './routes/device.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,7 +43,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Device-Id', 'X-Device-Generation'],
   })
 );
 
@@ -72,9 +73,13 @@ app.use('/api/v1/memories', memoryRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/v1/conversations', conversationRoutes);
 
-// Device Pairing & Disaster Recovery Endpoints (Milestone 3.3)
+// Device Pairing & Disaster Recovery Endpoints (Milestone 3.3 & 3.4.1)
 app.use('/api/pairing', pairingRoutes);
 app.use('/api/v1/pairing', pairingRoutes);
+
+// Secure Device Authentication Endpoints (Milestone 3.4.2)
+app.use('/api/device', deviceRoutes);
+app.use('/api/v1/device', deviceRoutes);
 
 // 404 & Error Handlers
 app.use(notFoundHandler);

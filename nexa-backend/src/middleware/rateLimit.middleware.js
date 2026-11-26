@@ -45,3 +45,33 @@ export const pairingRateLimiter = rateLimit({
   },
   statusCode: 429,
 });
+
+/**
+ * Strict rate limiter for pairing code claim attempts to mitigate brute-force guessing.
+ */
+export const pairingClaimRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 5000 : 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many pairing claim attempts. Please wait before trying again.',
+  },
+  statusCode: 429,
+});
+
+/**
+ * Rate limiter for device authentication and token rotation endpoints.
+ */
+export const deviceAuthRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 5000 : 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many device authentication attempts. Please slow down.',
+  },
+  statusCode: 429,
+});

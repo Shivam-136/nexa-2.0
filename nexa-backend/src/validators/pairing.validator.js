@@ -97,3 +97,33 @@ export const adminResetSchema = z.object({
   expectedGeneration: z.number().int().min(1),
   newMasterHash: z.string().trim().min(1, 'New master hash cannot be empty'),
 });
+
+// ============================================================
+// M3.4.1 Device Pairing Initiation, Claim, & Cancel Schemas
+// ============================================================
+
+export const initiatePairingSchema = z.object({
+  deviceNameHint: z.string().trim().max(100).optional(),
+}).optional().default({});
+
+export const cancelPairingSchema = z.object({
+  sessionId: z.string().trim().min(1).max(128).optional(),
+}).optional().default({});
+
+export const claimPairingSchema = z.object({
+  pairingCode: z
+    .string({ required_error: 'Pairing code is required' })
+    .trim()
+    .min(6, 'Pairing code must be at least 6 characters')
+    .max(32, 'Pairing code must not exceed 32 characters'),
+  deviceId: z
+    .string({ required_error: 'Device ID is required' })
+    .trim()
+    .min(8, 'Device ID must be at least 8 characters')
+    .max(128, 'Device ID must not exceed 128 characters'),
+  deviceName: z
+    .string({ required_error: 'Device name is required' })
+    .trim()
+    .min(1, 'Device name cannot be empty')
+    .max(100, 'Device name must not exceed 100 characters'),
+});

@@ -39,6 +39,19 @@
   const btnMinimizeTray = document.getElementById('btn-minimize-tray');
   const btnQuitApp = document.getElementById('btn-quit-app');
 
+  // Pairing DOM Elements (M3.4.1)
+  const pairingCodeInput = document.getElementById('pairing-code-input');
+  const pairingDeviceNameInput = document.getElementById('pairing-device-name-input');
+  const btnPairDevice = document.getElementById('btn-pair-device');
+  const btnCancelPairing = document.getElementById('btn-cancel-pairing');
+  const pairingStatusBadge = document.getElementById('pairing-status-badge');
+  const valConnectedAccount = document.getElementById('val-connected-account');
+  const valPairedDeviceId = document.getElementById('val-paired-device-id');
+  const valPairedAt = document.getElementById('val-paired-at');
+  const valHeartbeatState = document.getElementById('val-heartbeat-state');
+  const valLastHeartbeat = document.getElementById('val-last-heartbeat');
+  const valHeartbeatError = document.getElementById('val-heartbeat-error');
+
   // Telemetry elements
   const valPlatform = document.getElementById('val-platform');
   const valArch = document.getElementById('val-arch');
@@ -97,11 +110,29 @@
           if (valPairing) {
             valPairing.textContent = deviceInfo && deviceInfo.isPaired
               ? `Paired (${deviceInfo.deviceName || deviceInfo.deviceId})`
-              : 'Unpaired (Ready for M3.3)';
+              : 'Unpaired (Ready to Pair)';
           }
         } catch (_) {
           if (valStorage) valStorage.textContent = 'Active (Protected)';
           if (valPairing) valPairing.textContent = 'Unpaired';
+        }
+      }
+
+      if (window.nexaDesktop.pairing && typeof window.nexaDesktop.pairing.getStatus === 'function') {
+        try {
+          const pairingStatus = await window.nexaDesktop.pairing.getStatus();
+          renderPairingStatus(pairingStatus);
+        } catch (_) {
+          // Ignore pairing status load error
+        }
+      }
+
+      if (window.nexaDesktop.heartbeat && typeof window.nexaDesktop.heartbeat.getStatus === 'function') {
+        try {
+          const hbStatus = await window.nexaDesktop.heartbeat.getStatus();
+          renderHeartbeatStatus(hbStatus);
+        } catch (_) {
+          // Ignore heartbeat status load error
         }
       }
 
@@ -210,6 +241,130 @@
     window.nexaDesktop.storage.onStatusChange((evt) => {
       logConsole(`Storage event: Device ${evt?.isPaired ? 'Paired' : 'Unpaired'}`, 'info');
       loadTelemetry();
+    });
+  }
+
+  /**
+   * Updates the Device Pairing UI from sanitized Main Process status.
+   * @param {Object} status
+   */
+  function renderPairingStatus(status) {
+    if (!status) return;
+    const state = status.state || (status.isPaired ? 'paired' : 'idle');
+    const info = status.deviceInfo || {};
+
+    if (pairingStatusBadge) {
+      const labelMap = {
+        idle: 'Unpaired',
+        claiming: 'Pairing...',
+        paired: 'Paired',
+        cancelled: 'Cancelled',
+        error: 'Error',
+      };
+      pairingStatusBadge.textContent = labelMap[state] || state;
+    }
+
+    if (valConnectedAccount) {
+      valConnectedAccount.textContent = info.isPaired && info.userId
+        ? `Account ${info.userId} (${info.deviceName || 'Workstation'})`
+        : 'Not Paired';
+    }
+    if (valPairedDeviceId) {
+      valPairedDeviceId.textContent = info.isPaired && info.deviceId ? info.deviceId : '—';
+    }
+    if (valPairedAt) {
+      valPairedAt.textContent = info.isPaired && info.pairedAt
+        ? new Date(info.pairedAt).toLocaleString()
+        : '—';
+    }
+
+    if (btnCancelPairing) {
+      btnCancelPairing.disabled = state !== 'claiming';
+    }
+    if (btnPairDevice) {
+      btnPairDevice.disabled = state === 'claiming';
+    }
+  }
+
+  async function handlePairDevice() {
+    if (!window.nexaDesktop.pairing) return;
+    const code = (pairingCodeInput?.value || '').trim();
+    if (!code) {
+      logConsole('Please enter a pairing code from your NEXA 2.0 web dashboard.', 'error');
+      return;
+    }
+    const deviceName = (pairingDeviceNameInput?.value || '').trim();
+
+    try {
+      logConsole(`Initiating device pairing claim...`, 'info');
+      const res = await window.nexaDesktop.pairing.claim({
+        pairingCode: code,
+        ...(deviceName ? { deviceName } : {}),
+      });
+      if (res && res.success) {
+        logConsole(`Device paired successfully (${res.deviceInfo?.deviceName || res.deviceInfo?.deviceId}).`, 'success');
+        if (pairingCodeInput) pairingCodeInput.value = '';
+        await loadTelemetry();
+      } else {
+        logConsole(`Pairing failed: ${res?.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      logConsole(`Pairing failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleCancelPairing() {
+    if (!window.nexaDesktop.pairing) return;
+    try {
+      const res = await window.nexaDesktop.pairing.cancel();
+      logConsole(`Pairing ${res?.cancelled ? 'cancelled' : 'reset'}.`, 'info');
+    } catch (err) {
+      logConsole(`Failed to cancel pairing: ${err.message}`, 'error');
+    }
+  }
+
+  if (btnPairDevice) {
+    btnPairDevice.addEventListener('click', handlePairDevice);
+  }
+  if (btnCancelPairing) {
+    btnCancelPairing.addEventListener('click', handleCancelPairing);
+  }
+  if (pairingCodeInput) {
+    pairingCodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handlePairDevice();
+      }
+    });
+  }
+
+  if (window.nexaDesktop.pairing && typeof window.nexaDesktop.pairing.onStatusChange === 'function') {
+    window.nexaDesktop.pairing.onStatusChange((status) => {
+      renderPairingStatus(status);
+    });
+  }
+
+  /**
+   * Updates Heartbeat connection state UI from sanitized Main Process status.
+   * @param {Object} hbStatus
+   */
+  function renderHeartbeatStatus(hbStatus) {
+    if (!hbStatus) return;
+    if (valHeartbeatState) {
+      valHeartbeatState.textContent = hbStatus.state || 'OFFLINE';
+    }
+    if (valLastHeartbeat) {
+      valLastHeartbeat.textContent = hbStatus.lastSuccessfulHeartbeatAt
+        ? new Date(hbStatus.lastSuccessfulHeartbeatAt).toLocaleString()
+        : '—';
+    }
+    if (valHeartbeatError) {
+      valHeartbeatError.textContent = hbStatus.lastError || 'None';
+    }
+  }
+
+  if (window.nexaDesktop.heartbeat && typeof window.nexaDesktop.heartbeat.onStatusChange === 'function') {
+    window.nexaDesktop.heartbeat.onStatusChange((hbStatus) => {
+      renderHeartbeatStatus(hbStatus);
     });
   }
 

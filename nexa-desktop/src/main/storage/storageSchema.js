@@ -21,7 +21,7 @@ function validateCredentialPayload(payload) {
     throw new TypeError('Credential payload must be a non-null object');
   }
 
-  const { deviceId, deviceName, deviceToken, userId, backendUrl, pairedAt } = payload;
+  const { deviceId, deviceName, deviceToken, userId, backendUrl, pairedAt, deviceGeneration } = payload;
 
   if (typeof deviceId !== 'string' || !deviceId.trim() || deviceId.trim().length > MAX_ID_LENGTH) {
     throw new Error(`Invalid deviceId: must be a non-empty string up to ${MAX_ID_LENGTH} characters`);
@@ -59,6 +59,15 @@ function validateCredentialPayload(payload) {
     sanitizedPairedAt = sanitizedPairedAt.trim();
   }
 
+  let sanitizedGeneration = 1;
+  if (deviceGeneration !== undefined && deviceGeneration !== null) {
+    const parsedGen = Number(deviceGeneration);
+    if (!Number.isInteger(parsedGen) || parsedGen < 1) {
+      throw new Error('Invalid deviceGeneration: must be an integer >= 1');
+    }
+    sanitizedGeneration = parsedGen;
+  }
+
   return {
     deviceId: deviceId.trim(),
     deviceName: deviceName.trim(),
@@ -66,6 +75,7 @@ function validateCredentialPayload(payload) {
     userId: userId.trim(),
     backendUrl: backendUrl.trim(),
     pairedAt: sanitizedPairedAt,
+    deviceGeneration: sanitizedGeneration,
   };
 }
 

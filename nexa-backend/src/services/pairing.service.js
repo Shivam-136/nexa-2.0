@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import Device from '../models/device.model.js';
+import PairingSession from '../models/pairingSession.model.js';
 import User from '../models/user.model.js';
 import { SecurityError } from '../utils/security.errors.js';
 
@@ -741,5 +742,305 @@ export async function executeFencedAdminReset({
     status: 'ADMIN_RESET_COMPLETE',
     newGeneration: updatedDevice.deviceGeneration,
     fencingToken: updatedDevice.activePairingLock.deliveryFence.fencingToken,
+  };
+}
+
+// ============================================================
+// M3.4.1 — Device Pairing Initiation, Status, Cancel, & Claim
+// ============================================================
+
+const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PAIRING_CODE_LENGTH = 8;
+const PAIRING_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Generates a cryptographically random 8-character pairing code formatted as XXXX-XXXX.
+ * Uses a 32-char unambiguous alphabet so randomBytes(8) % 32 has zero modulo bias.
+ */
+function generateSecurePairingCode() {
+  const bytes = crypto.randomBytes(PAIRING_CODE_LENGTH);
+  let raw = '';
+  for (let i = 0; i < PAIRING_CODE_LENGTH; i += 1) {
+    raw += PAIRING_CODE_ALPHABET[bytes[i] % PAIRING_CODE_ALPHABET.length];
+  }
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+}
+
+/**
+ * Normalizes a user/agent-entered pairing code into XXXX-XXXX format.
+ */
+export function normalizePairingCode(input) {
+  if (typeof input !== 'string') {
+    throw new SecurityError('INVALID_PAIRING_CODE: Pairing code must be a string', 400);
+  }
+  const cleaned = input.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (cleaned.length !== PAIRING_CODE_LENGTH) {
+    throw new SecurityError('INVALID_PAIRING_CODE: Pairing code must be 8 characters', 400);
+  }
+  for (const ch of cleaned) {
+    if (!PAIRING_CODE_ALPHABET.includes(ch)) {
+      throw new SecurityError('INVALID_PAIRING_CODE: Pairing code contains invalid characters', 400);
+    }
+  }
+  return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 8)}`;
+}
+
+/**
+ * Hashes a normalized pairing code with SHA-256 (uppercase hex to match schema).
+ * Ensures plaintext pairing codes are never persisted or queried in MongoDB.
+ */
+export function hashPairingCode(normalizedCode) {
+  return crypto.createHash('sha256').update(normalizedCode).digest('hex').toUpperCase();
+}
+
+/**
+ * Initiates a new short-lived pairing session for an authenticated user.
+ * Cancels any prior pending unclaimed sessions for the same user.
+ */
+export async function initiatePairingSession({ userId }) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    throw new SecurityError('INVALID_USER_ID: Valid authenticated user required', 401);
+  }
+
+  await PairingSession.updateMany(
+    { userId, status: 'pending', isClaimed: false },
+    { $set: { status: 'cancelled' } }
+  );
+
+  const pairingCode = generateSecurePairingCode();
+  const hashedPairingCode = hashPairingCode(pairingCode);
+  const expiresAt = new Date(Date.now() + PAIRING_TTL_MS);
+  const operationId = crypto.randomUUID();
+
+  const session = await PairingSession.create({
+    userId,
+    pairingCode: hashedPairingCode,
+    expiresAt,
+    isClaimed: false,
+    status: 'pending',
+    operationId,
+  });
+
+  return {
+    sessionId: session._id.toString(),
+    pairingCode,
+    expiresAt: session.expiresAt.toISOString(),
+    ttlSeconds: Math.floor(PAIRING_TTL_MS / 1000),
+    status: session.status,
+  };
+}
+
+/**
+ * Returns the authenticated user's pairing session status and connected devices.
+ */
+export async function getPairingStatus({ userId, sessionId = null }) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    throw new SecurityError('INVALID_USER_ID: Valid authenticated user required', 401);
+  }
+
+  const devices = await Device.find({
+    userId,
+    isRevoked: false,
+    hashedDeviceToken: { $ne: null },
+  })
+    .select('deviceId deviceName deviceGeneration isOnline isQuarantined lastSeenAt lastHeartbeatAt heartbeatCount lastConfirmedActivationAt createdAt updatedAt')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  let session = null;
+  if (sessionId) {
+    if (!mongoose.Types.ObjectId.isValid(String(sessionId))) {
+      throw new SecurityError('INVALID_SESSION_ID: Malformed pairing session ID', 400);
+    }
+    session = await PairingSession.findOne({ _id: sessionId, userId }).lean();
+  } else {
+    session = await PairingSession.findOne({ userId, status: 'pending', isClaimed: false })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  let activeSession = null;
+  if (session) {
+    const isExpired = session.status === 'pending' && new Date(session.expiresAt) <= new Date();
+    activeSession = {
+      sessionId: session._id.toString(),
+      pairingCode: null, // Never expose stored code hash or re-expose plaintext on poll
+      status: isExpired ? 'expired' : session.status,
+      isClaimed: Boolean(session.isClaimed),
+      claimedDeviceId: session.claimedDeviceId || null,
+      claimedAt: session.claimedAt ? new Date(session.claimedAt).toISOString() : null,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+    };
+  }
+
+  const HEARTBEAT_STALE_MS = Number(process.env.DEVICE_HEARTBEAT_STALE_MS) || 90000;
+  const nowMs = Date.now();
+
+  return {
+    activeSession,
+    connectedDevices: devices.map((d) => {
+      const lastSeenMs = d.lastSeenAt ? new Date(d.lastSeenAt).getTime() : 0;
+      const isFresh = Boolean(d.isOnline && lastSeenMs > 0 && nowMs - lastSeenMs <= HEARTBEAT_STALE_MS);
+      const effectiveOnline = Boolean(isFresh && !d.isQuarantined);
+      const connectionState = d.isQuarantined
+        ? 'QUARANTINED'
+        : effectiveOnline
+        ? 'ONLINE'
+        : 'OFFLINE';
+
+      return {
+        deviceId: d.deviceId,
+        deviceName: d.deviceName,
+        deviceGeneration: d.deviceGeneration,
+        isOnline: effectiveOnline,
+        isQuarantined: Boolean(d.isQuarantined),
+        connectionState,
+        pairedAt: (d.lastConfirmedActivationAt || d.updatedAt || d.createdAt)
+          ? new Date(d.lastConfirmedActivationAt || d.updatedAt || d.createdAt).toISOString()
+          : null,
+        lastSeenAt: d.lastSeenAt ? new Date(d.lastSeenAt).toISOString() : null,
+        lastHeartbeatAt: d.lastHeartbeatAt ? new Date(d.lastHeartbeatAt).toISOString() : null,
+        heartbeatCount: d.heartbeatCount || 0,
+      };
+    }),
+  };
+}
+
+/**
+ * Cancels an active pending pairing session for the authenticated user.
+ */
+export async function cancelPairingSession({ userId, sessionId = null }) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    throw new SecurityError('INVALID_USER_ID: Valid authenticated user required', 401);
+  }
+
+  const filter = { userId, status: 'pending', isClaimed: false };
+  if (sessionId) {
+    if (!mongoose.Types.ObjectId.isValid(String(sessionId))) {
+      throw new SecurityError('INVALID_SESSION_ID: Malformed pairing session ID', 400);
+    }
+    filter._id = sessionId;
+  }
+
+  const updated = await PairingSession.findOneAndUpdate(
+    filter,
+    { $set: { status: 'cancelled' } },
+    { returnDocument: 'after' }
+  );
+
+  return {
+    cancelled: Boolean(updated),
+    sessionId: updated ? updated._id.toString() : sessionId || null,
+    status: updated ? updated.status : 'none',
+  };
+}
+
+/**
+ * Atomically claims a pending pairing code for a Desktop Agent device.
+ * Enforces single-use atomic CAS (replay protection), expiration check,
+ * and issues a fresh device token whose SHA-256 hash is stored on Device.
+ */
+export async function claimPairingSession({ pairingCode, deviceId, deviceName }) {
+  const formattedCode = normalizePairingCode(pairingCode);
+  const hashedCode = hashPairingCode(formattedCode);
+  const now = new Date();
+
+  const claimedSession = await PairingSession.findOneAndUpdate(
+    {
+      pairingCode: hashedCode,
+      isClaimed: false,
+      status: 'pending',
+      expiresAt: { $gt: now },
+    },
+    {
+      $set: {
+        isClaimed: true,
+        claimedAt: now,
+        claimedDeviceId: deviceId,
+        status: 'completed',
+      },
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!claimedSession) {
+    const existing = await PairingSession.findOne({ pairingCode: hashedCode }).lean();
+    if (!existing) {
+      throw new SecurityError('INVALID_PAIRING_CODE: Pairing code not found', 404);
+    }
+    if (existing.isClaimed || existing.status === 'completed') {
+      throw new SecurityError('PAIRING_CODE_ALREADY_CLAIMED: Pairing code has already been used', 409);
+    }
+    if (existing.status === 'cancelled') {
+      throw new SecurityError('PAIRING_SESSION_CANCELLED: Pairing session was cancelled', 410);
+    }
+    if (new Date(existing.expiresAt) <= now) {
+      throw new SecurityError('PAIRING_CODE_EXPIRED: Pairing code has expired', 410);
+    }
+    throw new SecurityError('PAIRING_CLAIM_REJECTED: Unable to claim pairing session', 409);
+  }
+
+  const existingDevice = await Device.findOne({ deviceId }).lean();
+  if (
+    existingDevice &&
+    existingDevice.userId &&
+    existingDevice.userId.toString() !== claimedSession.userId.toString()
+  ) {
+    throw new SecurityError(
+      'DEVICE_IDENTITY_CONFLICT: Device ID is already bound to another account',
+      403
+    );
+  }
+
+  const deviceToken = crypto.randomBytes(32).toString('hex');
+  const hashedDeviceToken = crypto.createHash('sha256').update(deviceToken).digest('hex');
+
+  let device;
+
+  if (existingDevice) {
+    if (existingDevice.activePairingLock?.state === 'in_pairing') {
+      throw new SecurityError('DEVICE_PAIRING_LOCKED: Device has an active pairing lock', 409);
+    }
+    device = await Device.findOneAndUpdate(
+      { deviceId, 'activePairingLock.state': { $ne: 'in_pairing' } },
+      {
+        $set: {
+          userId: claimedSession.userId,
+          deviceName,
+          hashedDeviceToken,
+          stagedDeviceToken: null,
+          isRevoked: false,
+          isOnline: false,
+          lastSeenAt: now,
+          lastConfirmedActivationAt: now,
+        },
+        $inc: { deviceGeneration: 1 },
+      },
+      { returnDocument: 'after' }
+    );
+    if (!device) {
+      throw new SecurityError('DEVICE_UPDATE_CONFLICT: Unable to bind device', 409);
+    }
+  } else {
+    device = await Device.create({
+      userId: claimedSession.userId,
+      deviceId,
+      deviceName,
+      deviceGeneration: 1,
+      hashedDeviceToken,
+      isRevoked: false,
+      isOnline: false,
+      lastSeenAt: now,
+      lastConfirmedActivationAt: now,
+    });
+  }
+
+  return {
+    deviceId: device.deviceId,
+    deviceName: device.deviceName,
+    deviceToken,
+    userId: claimedSession.userId.toString(),
+    deviceGeneration: device.deviceGeneration,
+    pairedAt: now.toISOString(),
   };
 }

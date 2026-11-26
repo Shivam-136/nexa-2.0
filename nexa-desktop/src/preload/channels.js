@@ -14,6 +14,16 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:app-quit',
   'nexa:storage-get-status',
   'nexa:storage-get-device-info',
+  'nexa:pairing-claim',
+  'nexa:pairing-cancel',
+  'nexa:pairing-get-status',
+  'nexa:device-auth-get-status',
+  'nexa:device-auth-authenticate',
+  'nexa:device-auth-verify',
+  'nexa:heartbeat-get-status',
+  'nexa:heartbeat-start',
+  'nexa:heartbeat-stop',
+  'nexa:heartbeat-send-now',
 ]);
 
 const ALLOWED_RECEIVE_CHANNELS = new Set([
@@ -21,6 +31,9 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'nexa:status-changed',
   'nexa:window-state-changed',
   'nexa:storage-status-changed',
+  'nexa:pairing-status-changed',
+  'nexa:device-auth-status-changed',
+  'nexa:heartbeat-status-changed',
 ]);
 
 const MAX_PAYLOAD_STRING_LENGTH = 1024;

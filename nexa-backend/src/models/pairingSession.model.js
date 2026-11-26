@@ -41,7 +41,7 @@ const pairingSessionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'delivering', 'rolling_back', 'failed_rolled_back', 'completed'],
+      enum: ['pending', 'delivering', 'rolling_back', 'failed_rolled_back', 'completed', 'cancelled'],
       default: 'pending',
       index: true,
     },

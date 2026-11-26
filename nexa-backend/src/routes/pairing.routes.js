@@ -6,6 +6,10 @@ import {
   handleConfirmActivation,
   handleReleaseFence,
   handleAdminReset,
+  handleInitiatePairing,
+  handleGetPairingStatus,
+  handleCancelPairing,
+  handleClaimPairing,
 } from '../controllers/pairing.controller.js';
 import { validateBody } from '../middleware/validate.middleware.js';
 import {
@@ -15,11 +19,45 @@ import {
   confirmActivationSchema,
   releaseFenceSchema,
   adminResetSchema,
+  initiatePairingSchema,
+  cancelPairingSchema,
+  claimPairingSchema,
 } from '../validators/pairing.validator.js';
-import { pairingRateLimiter } from '../middleware/rateLimit.middleware.js';
+import { pairingRateLimiter, pairingClaimRateLimiter } from '../middleware/rateLimit.middleware.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.middleware.js';
 
 const router = Router();
+
+// Device Pairing Endpoints (Milestone 3.4.1)
+router.post(
+  '/initiate',
+  pairingRateLimiter,
+  requireAuth,
+  validateBody(initiatePairingSchema),
+  handleInitiatePairing
+);
+
+router.get(
+  '/status',
+  pairingRateLimiter,
+  requireAuth,
+  handleGetPairingStatus
+);
+
+router.post(
+  '/cancel',
+  pairingRateLimiter,
+  requireAuth,
+  validateBody(cancelPairingSchema),
+  handleCancelPairing
+);
+
+router.post(
+  '/claim',
+  pairingClaimRateLimiter,
+  validateBody(claimPairingSchema),
+  handleClaimPairing
+);
 
 // Recovery Endpoints (Milestone 3.3 Domain 1)
 router.post(

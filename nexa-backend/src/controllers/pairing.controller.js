@@ -8,6 +8,10 @@ import {
   ackAndPromoteDeviceDeliveryFence,
   releaseDeviceDeliveryFence,
   executeFencedAdminReset,
+  initiatePairingSession,
+  getPairingStatus,
+  cancelPairingSession,
+  claimPairingSession,
 } from '../services/pairing.service.js';
 import { SecurityError } from '../utils/security.errors.js';
 
@@ -451,6 +455,114 @@ export async function handleAdminReset(req, res, next) {
       status: result.status,
       newGeneration: result.newGeneration,
       fencingToken: result.fencingToken,
+    });
+  } catch (err) {
+    if (err instanceof SecurityError) {
+      return res.status(err.statusCode).json({
+        success: false,
+        error: err.message,
+      });
+    }
+    next(err);
+  }
+}
+
+/**
+ * Initiates a new short-lived device pairing session.
+ * POST /api/v1/pairing/initiate
+ */
+export async function handleInitiatePairing(req, res, next) {
+  try {
+    const result = await initiatePairingSession({ userId: req.user.id });
+    return res.status(201).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    if (err instanceof SecurityError) {
+      return res.status(err.statusCode).json({
+        success: false,
+        error: err.message,
+      });
+    }
+    next(err);
+  }
+}
+
+/**
+ * Retrieves current pairing session status and connected devices for the authenticated user.
+ * GET /api/v1/pairing/status
+ */
+export async function handleGetPairingStatus(req, res, next) {
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' && req.query.sessionId.trim()
+      ? req.query.sessionId.trim()
+      : null;
+
+    const result = await getPairingStatus({
+      userId: req.user.id,
+      sessionId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    if (err instanceof SecurityError) {
+      return res.status(err.statusCode).json({
+        success: false,
+        error: err.message,
+      });
+    }
+    next(err);
+  }
+}
+
+/**
+ * Cancels an active pending pairing session.
+ * POST /api/v1/pairing/cancel
+ */
+export async function handleCancelPairing(req, res, next) {
+  try {
+    const sessionId = req.body?.sessionId || null;
+    const result = await cancelPairingSession({
+      userId: req.user.id,
+      sessionId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    if (err instanceof SecurityError) {
+      return res.status(err.statusCode).json({
+        success: false,
+        error: err.message,
+      });
+    }
+    next(err);
+  }
+}
+
+/**
+ * Claims a pairing code from the Desktop Agent and issues device credentials.
+ * POST /api/v1/pairing/claim
+ */
+export async function handleClaimPairing(req, res, next) {
+  try {
+    const { pairingCode, deviceId, deviceName } = req.body;
+    const result = await claimPairingSession({
+      pairingCode,
+      deviceId,
+      deviceName,
+    });
+
+    return res.status(200).json({
+      success: true,
+      status: 'PAIRED',
+      ...result,
     });
   } catch (err) {
     if (err instanceof SecurityError) {

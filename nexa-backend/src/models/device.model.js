@@ -1,5 +1,36 @@
 import mongoose from 'mongoose';
 
+const deviceRefreshTokenSubSchema = new mongoose.Schema(
+  {
+    tokenHash: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    deviceGeneration: {
+      type: Number,
+      required: true,
+    },
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    rotatedAt: {
+      type: Date,
+      default: null,
+    },
+    replacedByTokenHash: {
+      type: String,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const deviceSchema = new mongoose.Schema(
   {
     userId: {
@@ -103,6 +134,27 @@ const deviceSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    isQuarantined: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    quarantineReason: {
+      type: String,
+      default: null,
+    },
+    deviceTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    lastAuthenticatedAt: {
+      type: Date,
+      default: null,
+    },
+    deviceRefreshTokens: {
+      type: [deviceRefreshTokenSubSchema],
+      default: [],
+    },
     ollamaAvailable: {
       type: Boolean,
       default: false,
@@ -114,6 +166,20 @@ const deviceSchema = new mongoose.Schema(
     lastSeenAt: {
       type: Date,
       default: Date.now,
+    },
+    lastHeartbeatAt: {
+      type: Date,
+      default: null,
+    },
+    heartbeatCount: {
+      type: Number,
+      default: 0,
+    },
+    heartbeatMetadata: {
+      agentVersion: { type: String, default: null },
+      platform: { type: String, default: null },
+      arch: { type: String, default: null },
+      uptimeSeconds: { type: Number, default: null },
     },
   },
   {
