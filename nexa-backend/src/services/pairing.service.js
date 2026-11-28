@@ -843,8 +843,17 @@ export async function getPairingStatus({ userId, sessionId = null }) {
     isRevoked: false,
     hashedDeviceToken: { $ne: null },
   })
-    .select('deviceId deviceName deviceGeneration isOnline isQuarantined lastSeenAt lastHeartbeatAt heartbeatCount lastConfirmedActivationAt createdAt updatedAt')
+    .select('deviceId deviceName deviceGeneration isOnline isQuarantined quarantineReason lastSeenAt lastHeartbeatAt lastAuthenticatedAt heartbeatCount heartbeatMetadata lastConfirmedActivationAt createdAt updatedAt')
     .sort({ updatedAt: -1 })
+    .lean();
+
+  const revokedDocs = await Device.find({
+    userId,
+    isRevoked: true,
+  })
+    .select('deviceId deviceName deviceGeneration isRevoked isQuarantined quarantineReason unpairedAt lastSeenAt lastHeartbeatAt lastAuthenticatedAt heartbeatCount heartbeatMetadata lastConfirmedActivationAt createdAt updatedAt')
+    .sort({ unpairedAt: -1, updatedAt: -1 })
+    .limit(20)
     .lean();
 
   let session = null;
@@ -894,15 +903,42 @@ export async function getPairingStatus({ userId, sessionId = null }) {
         deviceGeneration: d.deviceGeneration,
         isOnline: effectiveOnline,
         isQuarantined: Boolean(d.isQuarantined),
+        quarantineReason: d.quarantineReason || null,
         connectionState,
+        platform: d.heartbeatMetadata?.platform || null,
+        arch: d.heartbeatMetadata?.arch || null,
+        agentVersion: d.heartbeatMetadata?.agentVersion || null,
+        uptimeSeconds: typeof d.heartbeatMetadata?.uptimeSeconds === 'number' ? d.heartbeatMetadata.uptimeSeconds : null,
         pairedAt: (d.lastConfirmedActivationAt || d.updatedAt || d.createdAt)
           ? new Date(d.lastConfirmedActivationAt || d.updatedAt || d.createdAt).toISOString()
           : null,
         lastSeenAt: d.lastSeenAt ? new Date(d.lastSeenAt).toISOString() : null,
         lastHeartbeatAt: d.lastHeartbeatAt ? new Date(d.lastHeartbeatAt).toISOString() : null,
+        lastAuthenticatedAt: d.lastAuthenticatedAt ? new Date(d.lastAuthenticatedAt).toISOString() : null,
         heartbeatCount: d.heartbeatCount || 0,
       };
     }),
+    revokedDevices: revokedDocs.map((d) => ({
+      deviceId: d.deviceId,
+      deviceName: d.deviceName,
+      deviceGeneration: d.deviceGeneration,
+      isOnline: false,
+      isRevoked: true,
+      isQuarantined: Boolean(d.isQuarantined),
+      quarantineReason: d.quarantineReason || null,
+      connectionState: d.unpairedAt ? 'UNPAIRED' : 'REVOKED',
+      platform: d.heartbeatMetadata?.platform || null,
+      arch: d.heartbeatMetadata?.arch || null,
+      agentVersion: d.heartbeatMetadata?.agentVersion || null,
+      pairedAt: (d.lastConfirmedActivationAt || d.createdAt)
+        ? new Date(d.lastConfirmedActivationAt || d.createdAt).toISOString()
+        : null,
+      unpairedAt: d.unpairedAt ? new Date(d.unpairedAt).toISOString() : null,
+      lastSeenAt: d.lastSeenAt ? new Date(d.lastSeenAt).toISOString() : null,
+      lastHeartbeatAt: d.lastHeartbeatAt ? new Date(d.lastHeartbeatAt).toISOString() : null,
+      lastAuthenticatedAt: d.lastAuthenticatedAt ? new Date(d.lastAuthenticatedAt).toISOString() : null,
+      heartbeatCount: d.heartbeatCount || 0,
+    })),
   };
 }
 

@@ -134,6 +134,15 @@ const deviceSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    unpairedAt: {
+      type: Date,
+      default: null,
+    },
+    unpairedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     isQuarantined: {
       type: Boolean,
       default: false,

@@ -7,6 +7,8 @@ import {
   handleVerifyDeviceAuth,
   handleDeviceHeartbeat,
   handleOwnerRevokeDevice,
+  handleOwnerUnpairDevice,
+  handleDeviceSelfUnpair,
 } from '../controllers/deviceAuth.controller.js';
 import { requireDeviceAuth } from '../middleware/deviceAuth.middleware.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
@@ -65,12 +67,34 @@ router.post(
   handleDeviceHeartbeat
 );
 
-// User-authenticated device revocation (cross-user isolated)
+// Protected device self-unpair (requireDeviceAuth)
+router.post(
+  '/unpair',
+  deviceAuthRateLimiter,
+  requireDeviceAuth,
+  handleDeviceSelfUnpair
+);
+
+router.delete(
+  '/unpair',
+  deviceAuthRateLimiter,
+  requireDeviceAuth,
+  handleDeviceSelfUnpair
+);
+
+// User-authenticated device revocation & unpair (cross-user isolated)
 router.post(
   '/:deviceId/revoke',
   deviceAuthRateLimiter,
   requireAuth,
   handleOwnerRevokeDevice
+);
+
+router.delete(
+  '/:deviceId/unpair',
+  deviceAuthRateLimiter,
+  requireAuth,
+  handleOwnerUnpairDevice
 );
 
 export default router;

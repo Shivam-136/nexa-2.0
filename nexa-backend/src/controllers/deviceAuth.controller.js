@@ -3,6 +3,8 @@ import {
   rotateDeviceRefreshToken,
   logoutDeviceSession,
   revokeDeviceByOwner,
+  unpairDeviceByOwner,
+  unpairDeviceBySelf,
   recordDeviceHeartbeat,
 } from '../services/deviceAuth.service.js';
 import { SecurityError } from '../utils/security.errors.js';
@@ -144,6 +146,55 @@ export async function handleOwnerRevokeDevice(req, res, next) {
     const result = await revokeDeviceByOwner({
       deviceId,
       userId: req.user.id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    return handleSecurityOrNext(err, res, next);
+  }
+}
+
+/**
+ * Unpairs and revokes a paired device on behalf of its owning user.
+ * DELETE /api/v1/device/:deviceId/unpair
+ */
+export async function handleOwnerUnpairDevice(req, res, next) {
+  try {
+    const deviceId = typeof req.params.deviceId === 'string' ? req.params.deviceId.trim() : '';
+    if (!deviceId) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_DEVICE_ID',
+        error: 'Device ID parameter is required',
+      });
+    }
+
+    const result = await unpairDeviceByOwner({
+      deviceId,
+      userId: req.user.id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    return handleSecurityOrNext(err, res, next);
+  }
+}
+
+/**
+ * Unpairs the currently authenticated device session (Desktop self-unpair).
+ * POST /api/v1/device/unpair | DELETE /api/v1/device/unpair
+ */
+export async function handleDeviceSelfUnpair(req, res, next) {
+  try {
+    const result = await unpairDeviceBySelf({
+      authenticatedDevice: req.device,
+      body: req.body || {},
     });
 
     return res.status(200).json({

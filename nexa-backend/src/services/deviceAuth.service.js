@@ -321,7 +321,7 @@ export async function rotateDeviceRefreshToken({
       // Replay/reuse of an already rotated refresh token -> invalidate entire refresh token family
       await Device.updateOne(
         { deviceId: device.deviceId },
-        { $set: { deviceRefreshTokens: [] } }
+        { $set: { deviceRefreshTokens: [], isOnline: false } }
       );
       throw new SecurityError(
         'DEVICE_TOKEN_REUSE_DETECTED: Refresh token replay detected; device session invalidated',
@@ -506,4 +506,105 @@ export async function revokeDeviceByOwner({ deviceId, userId }) {
     deviceId: updated.deviceId,
     deviceGeneration: updated.deviceGeneration,
   };
+}
+
+/**
+ * Atomically unpairs and revokes a device on behalf of its owning user.
+ * Enforces cross-user ownership isolation, invalidates refresh tokens,
+ * bumps deviceGeneration, sets isOnline: false, and is idempotent on repeat.
+ */
+export async function unpairDeviceByOwner({ deviceId, userId }) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    throw new SecurityError('INVALID_USER_ID: Valid authenticated user required', 401);
+  }
+
+  const device = await Device.findOne({ deviceId });
+  if (!device) {
+    throw new SecurityError('DEVICE_NOT_FOUND: Device not found', 404);
+  }
+
+  if (!device.userId || device.userId.toString() !== String(userId)) {
+    throw new SecurityError('FORBIDDEN: You do not own this device', 403);
+  }
+
+  // Idempotent repeat: already revoked & unpaired by this owner
+  if (device.isRevoked && device.unpairedAt) {
+    return {
+      unpaired: true,
+      alreadyUnpaired: true,
+      deviceId: device.deviceId,
+      deviceGeneration: device.deviceGeneration,
+      isOnline: false,
+      unpairedAt: new Date(device.unpairedAt).toISOString(),
+    };
+  }
+
+  const now = new Date();
+  const updated = await Device.findOneAndUpdate(
+    { deviceId, userId, isRevoked: false },
+    {
+      $set: {
+        isRevoked: true,
+        isOnline: false,
+        hashedDeviceToken: null,
+        stagedDeviceToken: null,
+        deviceRefreshTokens: [],
+        unpairedAt: now,
+        unpairedBy: userId,
+      },
+      $inc: { deviceGeneration: 1 },
+    },
+    { returnDocument: 'after' }
+  ).lean();
+
+  if (!updated) {
+    // Concurrent unpair won the race -> return idempotent state
+    const fresh = await Device.findOne({ deviceId, userId }).lean();
+    if (!fresh) {
+      throw new SecurityError('DEVICE_NOT_FOUND: Device not found', 404);
+    }
+    return {
+      unpaired: true,
+      alreadyUnpaired: true,
+      deviceId: fresh.deviceId,
+      deviceGeneration: fresh.deviceGeneration,
+      isOnline: false,
+      unpairedAt: fresh.unpairedAt ? new Date(fresh.unpairedAt).toISOString() : now.toISOString(),
+    };
+  }
+
+  return {
+    unpaired: true,
+    alreadyUnpaired: false,
+    deviceId: updated.deviceId,
+    deviceGeneration: updated.deviceGeneration,
+    isOnline: false,
+    unpairedAt: updated.unpairedAt.toISOString(),
+  };
+}
+
+/**
+ * Atomically unpairs a device using its authenticated device identity (Desktop self-unpair).
+ * Never trusts body-supplied deviceId or userId.
+ */
+export async function unpairDeviceBySelf({ authenticatedDevice, body = {} }) {
+  if (!authenticatedDevice?.deviceId || !authenticatedDevice?.userId) {
+    throw new SecurityError('DEVICE_AUTH_REQUIRED: Authenticated device context is required', 401);
+  }
+
+  if (
+    typeof body.deviceId === 'string' &&
+    body.deviceId.trim() &&
+    body.deviceId.trim() !== authenticatedDevice.deviceId
+  ) {
+    throw new SecurityError(
+      'CROSS_DEVICE_TOKEN_MISUSE: Request body deviceId does not match authenticated device',
+      403
+    );
+  }
+
+  return await unpairDeviceByOwner({
+    deviceId: authenticatedDevice.deviceId,
+    userId: authenticatedDevice.userId,
+  });
 }
