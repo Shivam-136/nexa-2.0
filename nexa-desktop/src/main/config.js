@@ -23,6 +23,7 @@ const IPC_CHANNELS = Object.freeze({
   DEVICE_AUTH_GET_STATUS: 'nexa:device-auth-get-status',
   DEVICE_AUTH_AUTHENTICATE: 'nexa:device-auth-authenticate',
   DEVICE_AUTH_VERIFY: 'nexa:device-auth-verify',
+  DEVICE_AUTH_UNPAIR: 'nexa:device-auth-unpair',
   HEARTBEAT_GET_STATUS: 'nexa:heartbeat-get-status',
   HEARTBEAT_START: 'nexa:heartbeat-start',
   HEARTBEAT_STOP: 'nexa:heartbeat-stop',

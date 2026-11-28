@@ -31,6 +31,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:device-auth-get-status',
   'nexa:device-auth-authenticate',
   'nexa:device-auth-verify',
+  'nexa:device-auth-unpair',
   'nexa:heartbeat-get-status',
   'nexa:heartbeat-start',
   'nexa:heartbeat-stop',
@@ -344,6 +345,14 @@ const nexaDesktopAPI = Object.freeze({
      */
     verify: async () => {
       return await ipcRenderer.invoke('nexa:device-auth-verify');
+    },
+
+    /**
+     * Securely unpairs the device from the backend and clears local DPAPI credentials.
+     * @returns {Promise<{ success: boolean, unpaired: boolean, remoteRevocationPending?: boolean, error?: string }>}
+     */
+    unpair: async () => {
+      return await ipcRenderer.invoke('nexa:device-auth-unpair');
     },
 
     /**

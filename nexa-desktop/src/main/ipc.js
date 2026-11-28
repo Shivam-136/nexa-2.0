@@ -335,6 +335,34 @@ function registerIpcHandlers({ getMainWindow, onQuit, storageService = null, pai
     }
   });
 
+  // 21. Secure Device Unpair handler (Main Process only; never exposes tokens)
+  ipc.handle(IPC_CHANNELS.DEVICE_AUTH_UNPAIR, async () => {
+    try {
+      const result = await deviceAuth.unpairDevice({ heartbeatClient: heartbeat });
+      if (result.unpaired) {
+        const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
+        if (storage && typeof storage.getStatus === 'function') {
+          sendToRenderer(win, IPC_EVENTS.STORAGE_STATUS_CHANGED, storage.getStatus());
+        }
+        sendToRenderer(win, IPC_EVENTS.PAIRING_STATUS_CHANGED, {
+          state: 'idle',
+          isPaired: false,
+          deviceInfo: typeof storage.getDeviceInfo === 'function' ? storage.getDeviceInfo() : { isPaired: false },
+          lastError: null,
+        });
+      }
+      return result;
+    } catch (err) {
+      return {
+        success: false,
+        unpaired: false,
+        remoteRevocationPending: true,
+        retryable: true,
+        error: err.message,
+      };
+    }
+  });
+
   isRegistered = true;
 }
 

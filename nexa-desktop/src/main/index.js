@@ -93,6 +93,8 @@ function bootstrap() {
         sendToRenderer(getMainWindow(), IPC_EVENTS.DEVICE_AUTH_STATUS_CHANGED, statusPayload);
         if (heartbeatClient && statusPayload?.state === 'authenticated' && !heartbeatClient.getStatus().isRunning) {
           heartbeatClient.start();
+        } else if (heartbeatClient && statusPayload?.state === 'revoked') {
+          heartbeatClient.stop({ nextState: 'REVOKED' });
         }
       },
     });
@@ -120,10 +122,19 @@ function bootstrap() {
       heartbeatClient,
     });
 
-    // Automatically authenticate & start heartbeat if device is already paired
+    // Automatically authenticate & start heartbeat if device is already paired;
+    // on recoverable startup outage, start HeartbeatClient so exponential backoff recovers automatically.
     if (storageService.hasCredentials()) {
       deviceAuthClient.authenticate().catch((err) => {
         console.warn('[NEXA Main] Startup device authentication deferred:', err.message);
+        const code = err?.code || '';
+        const isPermanentStop =
+          code === 'DEVICE_REVOKED' ||
+          code === 'DEVICE_QUARANTINED' ||
+          String(err?.message || '').includes('NEXA_ERR_ENCRYPTION_UNAVAILABLE');
+        if (!isPermanentStop && heartbeatClient && !heartbeatClient.getStatus().isRunning) {
+          heartbeatClient.start();
+        }
       });
     }
 

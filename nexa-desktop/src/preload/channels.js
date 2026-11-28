@@ -20,6 +20,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'nexa:device-auth-get-status',
   'nexa:device-auth-authenticate',
   'nexa:device-auth-verify',
+  'nexa:device-auth-unpair',
   'nexa:heartbeat-get-status',
   'nexa:heartbeat-start',
   'nexa:heartbeat-stop',

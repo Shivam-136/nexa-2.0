@@ -22,7 +22,10 @@ const CONNECTION_STATES = Object.freeze({
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = Number(process.env.NEXA_HEARTBEAT_INTERVAL_MS) || 30000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = Number(process.env.NEXA_HEARTBEAT_TIMEOUT_MS) || 10000;
-const DEFAULT_RECONNECT_DELAY_MS = Number(process.env.NEXA_HEARTBEAT_RECONNECT_MS) || 5000;
+const DEFAULT_INITIAL_RECONNECT_DELAY_MS = Number(process.env.NEXA_HEARTBEAT_RECONNECT_MS) || 1000;
+const DEFAULT_BACKOFF_MULTIPLIER = 2;
+const DEFAULT_MAX_RECONNECT_DELAY_MS = Number(process.env.NEXA_HEARTBEAT_MAX_RECONNECT_MS) || 60000;
+const DEFAULT_JITTER_FACTOR = 0.2;
 
 function sanitizeErrorMessage(rawMessage) {
   if (!rawMessage || typeof rawMessage !== 'string') {
@@ -48,7 +51,14 @@ class HeartbeatClient {
     deviceAuthClient,
     intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
     timeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
-    reconnectDelayMs = DEFAULT_RECONNECT_DELAY_MS,
+    reconnectDelayMs = null,
+    initialReconnectDelayMs = null,
+    backoffMultiplier = DEFAULT_BACKOFF_MULTIPLIER,
+    maxReconnectDelayMs = DEFAULT_MAX_RECONNECT_DELAY_MS,
+    jitterFactor = DEFAULT_JITTER_FACTOR,
+    randomFn = Math.random,
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout,
     onStateChange = null,
     getMetadata = null,
   } = {}) {
@@ -57,9 +67,19 @@ class HeartbeatClient {
     }
 
     this._deviceAuthClient = deviceAuthClient;
-    this._intervalMs = Math.max(100, Number(intervalMs) || DEFAULT_HEARTBEAT_INTERVAL_MS);
-    this._timeoutMs = Math.max(50, Number(timeoutMs) || DEFAULT_HEARTBEAT_TIMEOUT_MS);
-    this._reconnectDelayMs = Math.max(50, Number(reconnectDelayMs) || DEFAULT_RECONNECT_DELAY_MS);
+    this._intervalMs = Math.max(50, Number(intervalMs) || DEFAULT_HEARTBEAT_INTERVAL_MS);
+    this._timeoutMs = Math.max(20, Number(timeoutMs) || DEFAULT_HEARTBEAT_TIMEOUT_MS);
+    const baseDelay = initialReconnectDelayMs ?? reconnectDelayMs ?? DEFAULT_INITIAL_RECONNECT_DELAY_MS;
+    this._initialReconnectDelayMs = Math.max(10, Number(baseDelay) || DEFAULT_INITIAL_RECONNECT_DELAY_MS);
+    this._backoffMultiplier = Math.max(1, Number(backoffMultiplier) || DEFAULT_BACKOFF_MULTIPLIER);
+    this._maxReconnectDelayMs = Math.max(
+      this._initialReconnectDelayMs,
+      Number(maxReconnectDelayMs) || DEFAULT_MAX_RECONNECT_DELAY_MS
+    );
+    this._jitterFactor = Math.min(1, Math.max(0, Number(jitterFactor ?? DEFAULT_JITTER_FACTOR)));
+    this._randomFn = typeof randomFn === 'function' ? randomFn : Math.random;
+    this._setTimeout = typeof setTimeoutFn === 'function' ? setTimeoutFn : setTimeout;
+    this._clearTimeout = typeof clearTimeoutFn === 'function' ? clearTimeoutFn : clearTimeout;
     this._onStateChange = typeof onStateChange === 'function' ? onStateChange : () => {};
     this._getMetadata = typeof getMetadata === 'function' ? getMetadata : () => ({});
 
@@ -69,6 +89,7 @@ class HeartbeatClient {
     this._lastError = null;
     this._consecutiveFailures = 0;
     this._heartbeatCount = 0;
+    this._nextRetryDelayMs = null;
 
     this._running = false;
     this._permanentlyStopped = false;
@@ -117,8 +138,27 @@ class HeartbeatClient {
       heartbeatCount: this._heartbeatCount,
       consecutiveFailures: this._consecutiveFailures,
       intervalMs: this._intervalMs,
+      nextRetryDelayMs: this._nextRetryDelayMs,
       lastError: this._lastError,
     };
+  }
+
+  /**
+   * Computes bounded exponential backoff delay with randomized jitter.
+   * @param {number} failureCount - 1-based consecutive failure count
+   * @returns {number} Delay in milliseconds
+   */
+  calculateBackoffDelay(failureCount) {
+    const attempt = Math.max(1, Number(failureCount) || 1);
+    const rawExponential = this._initialReconnectDelayMs * Math.pow(this._backoffMultiplier, attempt - 1);
+    const capped = Math.min(rawExponential, this._maxReconnectDelayMs);
+    if (this._jitterFactor <= 0) {
+      return Math.floor(capped);
+    }
+    const jitterSpan = capped * this._jitterFactor;
+    const rand = Math.min(1, Math.max(0, Number(this._randomFn())));
+    const offset = (rand * 2 - 1) * jitterSpan;
+    return Math.max(10, Math.min(this._maxReconnectDelayMs, Math.floor(capped + offset)));
   }
 
   /**
@@ -159,8 +199,9 @@ class HeartbeatClient {
    */
   stop({ nextState = null } = {}) {
     this._running = false;
+    this._nextRetryDelayMs = null;
     if (this._timer) {
-      clearTimeout(this._timer);
+      this._clearTimeout(this._timer);
       this._timer = null;
     }
     if (this._activeAbortController) {
@@ -181,17 +222,21 @@ class HeartbeatClient {
       return;
     }
     if (this._timer) {
-      clearTimeout(this._timer);
+      this._clearTimeout(this._timer);
+      this._timer = null;
     }
 
-    const delay = (this._state === CONNECTION_STATES.RECONNECTING || this._state === CONNECTION_STATES.OFFLINE)
-      ? Math.min(
-          this._reconnectDelayMs * Math.pow(1.5, Math.min(Math.max(this._consecutiveFailures - 1, 0), 4)),
-          this._intervalMs
-        )
+    const isRecovering =
+      this._state === CONNECTION_STATES.RECONNECTING ||
+      this._state === CONNECTION_STATES.OFFLINE;
+
+    const delay = isRecovering
+      ? this.calculateBackoffDelay(this._consecutiveFailures)
       : this._intervalMs;
 
-    this._timer = setTimeout(() => {
+    this._nextRetryDelayMs = isRecovering ? delay : null;
+
+    this._timer = this._setTimeout(() => {
       this._timer = null;
       if (this._running && !this._permanentlyStopped) {
         this.sendHeartbeat().catch(() => {});
@@ -298,8 +343,9 @@ class HeartbeatClient {
           return this.getStatus();
         }
 
-        // Success: ONLINE only after successful authenticated heartbeat
+        // Success: ONLINE only after successful authenticated heartbeat; reset backoff
         this._consecutiveFailures = 0;
+        this._nextRetryDelayMs = null;
         this._heartbeatCount = Number(payload.heartbeatCount) || (this._heartbeatCount + 1);
         this._lastSuccessfulHeartbeatAt = payload.lastHeartbeatAt || payload.lastSeenAt || new Date().toISOString();
         this._state = CONNECTION_STATES.ONLINE;
@@ -351,7 +397,14 @@ class HeartbeatClient {
           return this.getStatus();
         }
 
-        // Network failure -> RECONNECTING
+        // Non-5xx HTTP error thrown from DeviceAuthClient
+        if (err?.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+          this._consecutiveFailures += 1;
+          this._transitionTo(CONNECTION_STATES.ERROR, msg);
+          return this.getStatus();
+        }
+
+        // Network failure or 5xx -> RECONNECTING
         this._consecutiveFailures += 1;
         this._transitionTo(CONNECTION_STATES.RECONNECTING, msg);
         return this.getStatus();
@@ -376,6 +429,9 @@ module.exports = {
   CONNECTION_STATES,
   DEFAULT_HEARTBEAT_INTERVAL_MS,
   DEFAULT_HEARTBEAT_TIMEOUT_MS,
-  DEFAULT_RECONNECT_DELAY_MS,
+  DEFAULT_INITIAL_RECONNECT_DELAY_MS,
+  DEFAULT_BACKOFF_MULTIPLIER,
+  DEFAULT_MAX_RECONNECT_DELAY_MS,
+  DEFAULT_JITTER_FACTOR,
   sanitizeErrorMessage,
 };
