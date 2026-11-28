@@ -30,8 +30,22 @@ export async function cancelPairing(sessionId = null) {
   return await apiClient.post(`${PAIRING_BASE}/cancel`, sessionId ? { sessionId } : {});
 }
 
+/**
+ * Securely unpairs and revokes an owned paired device.
+ * @param {string} deviceId
+ * @returns {Promise<{ success: boolean, unpaired: boolean, alreadyUnpaired?: boolean, deviceId: string, deviceGeneration: number, unpairedAt?: string }>}
+ */
+export async function unpairDevice(deviceId) {
+  if (typeof deviceId !== 'string' || !deviceId.trim()) {
+    throw new Error('Device ID is required to unpair a device');
+  }
+  const deviceBase = API_ENDPOINTS.DEVICE || '/v1/device';
+  return await apiClient.delete(`${deviceBase}/${encodeURIComponent(deviceId.trim())}/unpair`);
+}
+
 export default {
   initiatePairing,
   getPairingStatus,
   cancelPairing,
+  unpairDevice,
 };

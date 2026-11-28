@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Monitor,
   ShieldAlert,
@@ -11,6 +11,7 @@ import {
   Clock,
   Laptop,
   X,
+  Info,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,24 +20,51 @@ import {
   initiatePairing,
   getPairingStatus,
   cancelPairing,
+  unpairDevice,
 } from '../services/pairing.service';
+import {
+  resolveDeviceStatus,
+  maskDeviceId,
+  formatPlatformLabel,
+  formatTimestamp,
+  computeDeviceOverview,
+} from '../utils/deviceStatus';
 
 export default function DesktopControlPage() {
-  const { connectionStatus, addToast } = useAppContext();
+  const { addToast } = useAppContext();
   const { user } = useAuth();
 
   const [pairingSession, setPairingSession] = useState(null);
   const [connectedDevices, setConnectedDevices] = useState([]);
+  const [revokedDevices, setRevokedDevices] = useState([]);
   const [pairingStatus, setPairingStatus] = useState('idle');
   const [pairingError, setPairingError] = useState(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitiating, setIsInitiating] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [confirmUnpairTarget, setConfirmUnpairTarget] = useState(null);
+  const [unpairingDeviceId, setUnpairingDeviceId] = useState(null);
+  const [selectedDeviceDetails, setSelectedDeviceDetails] = useState(null);
+  const [localDesktopHeartbeat, setLocalDesktopHeartbeat] = useState(null);
+  const [currentDesktopDeviceId, setCurrentDesktopDeviceId] = useState(null);
 
-  const loadPairingStatus = useCallback(async (sessionId = null) => {
+  const refreshInFlightRef = useRef(false);
+
+  const loadPairingStatus = useCallback(async (sessionId = null, { isManual = false } = {}) => {
+    if (isManual && refreshInFlightRef.current) {
+      return;
+    }
+    if (isManual) {
+      refreshInFlightRef.current = true;
+      setIsRefreshing(true);
+    }
+
     try {
       const data = await getPairingStatus(sessionId);
       setConnectedDevices(Array.isArray(data.connectedDevices) ? data.connectedDevices : []);
+      setRevokedDevices(Array.isArray(data.revokedDevices) ? data.revokedDevices : []);
       if (data.activeSession) {
         setPairingSession((prev) => ({
           ...data.activeSession,
@@ -57,8 +85,62 @@ export default function DesktopControlPage() {
       }
       setPairingError(null);
     } catch (err) {
-      setPairingError(err.message || 'Failed to load pairing status');
+      const msg = err.message || 'Failed to load device status';
+      setPairingError(msg);
+      if (isManual) {
+        addToast('Refresh Failed', msg, 'error');
+      }
+    } finally {
+      setIsInitialLoading(false);
+      if (isManual) {
+        refreshInFlightRef.current = false;
+        setIsRefreshing(false);
+      }
     }
+  }, [addToast]);
+
+  const handleRefreshDevices = () => {
+    loadPairingStatus(null, { isManual: true });
+  };
+
+  // Detect current Desktop Agent identity securely when running inside Electron
+  useEffect(() => {
+    const bridge = typeof window !== 'undefined' ? window.nexaDesktop : null;
+    if (!bridge) return undefined;
+
+    let active = true;
+    const syncLocalDesktop = async () => {
+      try {
+        if (bridge.storage?.getDeviceInfo) {
+          const info = await bridge.storage.getDeviceInfo();
+          if (active && info?.isPaired && info?.deviceId) {
+            setCurrentDesktopDeviceId(info.deviceId);
+          } else if (active) {
+            setCurrentDesktopDeviceId(null);
+          }
+        }
+        if (bridge.heartbeat?.getStatus) {
+          const hb = await bridge.heartbeat.getStatus();
+          if (active && hb) {
+            setLocalDesktopHeartbeat(hb);
+          }
+        }
+      } catch {
+        // Ignore bridge read failures when running outside Electron
+      }
+    };
+
+    syncLocalDesktop();
+    const unsubHb = bridge.heartbeat?.onStatusChange
+      ? bridge.heartbeat.onStatusChange((hb) => {
+          if (active && hb) setLocalDesktopHeartbeat(hb);
+        })
+      : null;
+
+    return () => {
+      active = false;
+      if (typeof unsubHb === 'function') unsubHb();
+    };
   }, []);
 
   useEffect(() => {
@@ -132,6 +214,31 @@ export default function DesktopControlPage() {
     }
   };
 
+  const handleConfirmUnpair = async () => {
+    if (!confirmUnpairTarget?.deviceId) return;
+    const targetId = confirmUnpairTarget.deviceId;
+    const targetName = confirmUnpairTarget.deviceName || targetId;
+
+    setUnpairingDeviceId(targetId);
+    setPairingError(null);
+    try {
+      const res = await unpairDevice(targetId);
+      setConfirmUnpairTarget(null);
+      await loadPairingStatus();
+      addToast(
+        res?.alreadyUnpaired ? 'Device Already Unpaired' : 'Device Unpaired',
+        `${targetName} has been securely disconnected and its credentials revoked.`,
+        'success'
+      );
+    } catch (err) {
+      const msg = err.message || 'Failed to unpair device';
+      setPairingError(msg);
+      addToast('Unpair Failed', msg, 'error');
+    } finally {
+      setUnpairingDeviceId(null);
+    }
+  };
+
   const handleCopyCode = async () => {
     if (!pairingSession?.pairingCode) return;
     try {
@@ -182,6 +289,8 @@ export default function DesktopControlPage() {
       granted: false,
     },
   ];
+
+  const overview = computeDeviceOverview(connectedDevices, revokedDevices);
 
   return (
     <div className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -301,73 +410,125 @@ export default function DesktopControlPage() {
           </div>
         )}
 
-        {/* Connected Account & Devices Status */}
-        <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
-              Connected Account Status
-            </span>
-            <span className="text-xs text-slate-300">
-              {user?.email || user?.displayName || 'Authenticated Account'}
-            </span>
+        {/* Device Overview & Connected Devices Management (M3.4.7) */}
+        <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
+                Device Management Overview
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Account: {user?.email || user?.displayName || 'Authenticated Account'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRefreshDevices}
+              disabled={isRefreshing}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50 self-start sm:self-auto"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
           </div>
 
-          {connectedDevices.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              No desktop devices paired to this account yet.
-            </p>
+          {/* Overview Metrics Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800">
+              <p className="text-[10px] font-mono uppercase text-slate-500">Paired Devices</p>
+              <p className="text-lg font-bold text-white mt-0.5">{overview.totalPaired}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800">
+              <p className="text-[10px] font-mono uppercase text-slate-500">Online</p>
+              <p className="text-lg font-bold text-emerald-400 mt-0.5">{overview.online}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800">
+              <p className="text-[10px] font-mono uppercase text-slate-500">Offline</p>
+              <p className="text-lg font-bold text-slate-300 mt-0.5">{overview.offline}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800">
+              <p className="text-[10px] font-mono uppercase text-slate-500">Revoked / Unpaired</p>
+              <p className="text-lg font-bold text-rose-400 mt-0.5">{overview.revokedOrUnpaired}</p>
+            </div>
+          </div>
+
+          {isInitialLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-label="Loading devices">
+              <div className="h-28 rounded-xl bg-slate-900/60 border border-slate-800 animate-pulse" />
+              <div className="h-28 rounded-xl bg-slate-900/60 border border-slate-800 animate-pulse" />
+            </div>
+          ) : connectedDevices.length === 0 ? (
+            <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/80 text-center">
+              <p className="text-xs text-slate-400">
+                No desktop devices paired to this account yet. Click <strong>Pair Device</strong> above to link a workstation.
+              </p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {connectedDevices.map((dev) => {
-                const connState = dev.connectionState || (dev.isOnline ? 'ONLINE' : 'OFFLINE');
-                const isOnline = Boolean(dev.isOnline);
-                const isQuarantined = Boolean(dev.isQuarantined) || connState === 'QUARANTINED';
-                const lastSeenDisplay = dev.lastSeenAt
-                  ? new Date(dev.lastSeenAt).toLocaleString()
-                  : 'Never';
+                const statusInfo = resolveDeviceStatus(dev, localDesktopHeartbeat);
+                const isCurrentDevice = Boolean(currentDesktopDeviceId && currentDesktopDeviceId === dev.deviceId);
+                const isQuarantined = statusInfo.state === 'QUARANTINED';
 
                 return (
                   <div
                     key={dev.deviceId}
                     className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col gap-2.5"
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center space-x-3 min-w-0">
-                        <Laptop
-                          className={`h-4 w-4 shrink-0 ${
-                            isQuarantined
-                              ? 'text-rose-400'
-                              : isOnline
-                              ? 'text-emerald-400'
-                              : 'text-slate-400'
-                          }`}
-                        />
+                        <Laptop className={`h-4 w-4 shrink-0 ${statusInfo.iconColor}`} />
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-white truncate">{dev.deviceName}</p>
-                          <p className="text-[11px] font-mono text-slate-400 truncate">{dev.deviceId}</p>
+                          <div className="flex items-center space-x-2">
+                            <p className="text-xs font-semibold text-white truncate">{dev.deviceName}</p>
+                            {isCurrentDevice && (
+                              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shrink-0">
+                                This Device
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-slate-400 truncate" title={dev.deviceId}>
+                            {maskDeviceId(dev.deviceId)}
+                          </p>
                         </div>
                       </div>
-                      <span
-                        className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border shrink-0 ${
-                          isQuarantined
-                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                            : isOnline
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : 'bg-slate-800 text-slate-400 border-slate-700'
-                        }`}
-                      >
-                        {isOnline ? 'Online' : 'Offline'}
-                      </span>
+                      <StatusBadge status={statusInfo.badgeStatus} label={statusInfo.label} size="xs" />
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800/80 pt-2">
-                      <span>State: <strong className="text-slate-200">{connState}</strong></span>
-                      <span>Last seen: {lastSeenDisplay}</span>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono text-slate-400 border-t border-slate-800/80 pt-2">
+                      <span>OS: <strong className="text-slate-300">{formatPlatformLabel(dev.platform, dev.arch)}</strong></span>
+                      <span className="text-right">State: <strong className="text-slate-200">{statusInfo.state}</strong></span>
+                      <span>Last seen: {formatTimestamp(dev.lastSeenAt)}</span>
+                      <span className="text-right">Heartbeat: {formatTimestamp(dev.lastHeartbeatAt)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] font-mono text-slate-500">
+                        Paired: {formatTimestamp(dev.pairedAt, 'Unavailable')} &bull; Gen #{dev.deviceGeneration || 1}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDeviceDetails(dev)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-all"
+                        >
+                          <Info className="h-3 w-3" />
+                          <span>Details</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmUnpairTarget(dev)}
+                          disabled={unpairingDeviceId === dev.deviceId}
+                          className="px-2.5 py-1 rounded-lg bg-rose-600/15 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-[11px] font-semibold transition-all disabled:opacity-50"
+                        >
+                          {unpairingDeviceId === dev.deviceId ? 'Unpairing...' : 'Unpair'}
+                        </button>
+                      </div>
                     </div>
 
                     {isQuarantined && (
                       <p className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2.5 py-1.5">
-                        Device is quarantined and cannot send heartbeats until recovered.
+                        {dev.quarantineReason || 'Device is quarantined and cannot send heartbeats until recovered.'}
                       </p>
                     )}
                   </div>
@@ -375,8 +536,198 @@ export default function DesktopControlPage() {
               })}
             </div>
           )}
+
+          {/* Historical Revoked / Unpaired Devices */}
+          {revokedDevices.length > 0 && (
+            <div className="pt-3 border-t border-slate-800/80 space-y-2">
+              <p className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+                Historical Revoked / Unpaired Devices ({revokedDevices.length})
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {revokedDevices.map((rev) => {
+                  const revStatus = resolveDeviceStatus(rev);
+                  return (
+                    <div
+                      key={`${rev.deviceId}-${rev.deviceGeneration}`}
+                      className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/70 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-300 truncate">{rev.deviceName}</p>
+                        <p className="text-[10px] font-mono text-slate-500 truncate">
+                          {maskDeviceId(rev.deviceId)} &bull; {rev.unpairedAt ? `Unpaired ${formatTimestamp(rev.unpairedAt)}` : `Last seen ${formatTimestamp(rev.lastSeenAt)}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <StatusBadge status={revStatus.badgeStatus} label={revStatus.label} size="xs" />
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDeviceDetails(rev)}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold"
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Device Details Modal (M3.4.7) */}
+      {selectedDeviceDetails && (() => {
+        const detailStatus = resolveDeviceStatus(selectedDeviceDetails, localDesktopHeartbeat);
+        const isCurrent = Boolean(currentDesktopDeviceId && currentDesktopDeviceId === selectedDeviceDetails.deviceId);
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="device-details-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+          >
+            <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 p-6 space-y-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h4 id="device-details-title" className="text-base font-bold text-white">
+                      {selectedDeviceDetails.deviceName}
+                    </h4>
+                    {isCurrent && (
+                      <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                        This Device
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">{detailStatus.description}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeviceDetails(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Connection Status</p>
+                  <div className="mt-1">
+                    <StatusBadge status={detailStatus.badgeStatus} label={`${detailStatus.label} (${detailStatus.state})`} size="xs" />
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Device ID</p>
+                  <p className="font-mono text-slate-200 mt-1 break-all text-[11px]">{selectedDeviceDetails.deviceId}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Operating System / Platform</p>
+                  <p className="text-slate-200 mt-1">{formatPlatformLabel(selectedDeviceDetails.platform, selectedDeviceDetails.arch)}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Agent Version &amp; Generation</p>
+                  <p className="text-slate-200 mt-1">
+                    {selectedDeviceDetails.agentVersion ? `v${selectedDeviceDetails.agentVersion}` : 'Unavailable'} &bull; Gen #{selectedDeviceDetails.deviceGeneration || 1}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Last Successful Heartbeat</p>
+                  <p className="text-slate-200 mt-1">{formatTimestamp(selectedDeviceDetails.lastHeartbeatAt)}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Last Seen</p>
+                  <p className="text-slate-200 mt-1">{formatTimestamp(selectedDeviceDetails.lastSeenAt)}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Paired Date</p>
+                  <p className="text-slate-200 mt-1">{formatTimestamp(selectedDeviceDetails.pairedAt, 'Unavailable')}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Heartbeat Count</p>
+                  <p className="text-slate-200 mt-1">{selectedDeviceDetails.heartbeatCount ?? 0}</p>
+                </div>
+                {(selectedDeviceDetails.isRevoked || selectedDeviceDetails.unpairedAt) && (
+                  <div className="sm:col-span-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                    <p className="text-[10px] font-mono uppercase text-rose-400">Revocation / Unpair Status</p>
+                    <p className="text-rose-200 mt-1">
+                      {selectedDeviceDetails.unpairedAt
+                        ? `Unpaired on ${formatTimestamp(selectedDeviceDetails.unpairedAt)}`
+                        : 'Device access has been revoked'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeviceDetails(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Unpair Confirmation Dialog (M3.4.6) */}
+      {confirmUnpairTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unpair-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 id="unpair-dialog-title" className="text-base font-bold text-white">
+                  Unpair Desktop Device?
+                </h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  This will permanently revoke active tokens and disconnect this workstation from your account.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmUnpairTarget(null)}
+                disabled={Boolean(unpairingDeviceId)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1 text-xs">
+              <p className="text-slate-200 font-semibold">{confirmUnpairTarget.deviceName}</p>
+              <p className="font-mono text-slate-400 text-[11px]">{confirmUnpairTarget.deviceId}</p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmUnpairTarget(null)}
+                disabled={Boolean(unpairingDeviceId)}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnpair}
+                disabled={Boolean(unpairingDeviceId)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-600/20 transition-all disabled:opacity-50"
+              >
+                {unpairingDeviceId ? 'Unpairing...' : 'Confirm Unpair'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Screen Stream Preview & Monitor Mockup */}
       <div className="rounded-3xl glass-card p-6 flex flex-col items-center justify-center min-h-[360px] relative overflow-hidden border border-slate-800">
